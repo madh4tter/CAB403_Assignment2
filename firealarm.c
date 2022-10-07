@@ -37,7 +37,7 @@ struct tempnode {
 	struct tempnode *next;
 };
 
-struct tempnode *deletenodes(struct tempnode *templist, int after)
+struct tempnode *deletenodes(struct tempnode *templist, int after) // !!NASA Power of 10: #9 (Function pointers are not allowed)
 {
 	if (templist->next) {
 		templist->next = deletenodes(templist->next, after - 1);
@@ -58,7 +58,7 @@ void tempmonitor(int level)
 	struct tempnode *templist = NULL, *newtemp, *medianlist = NULL, *oldesttemp;
 	int count, addr, temp, mediantemp, hightemps;
 	
-	for (;;) {
+	for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!!
 		// Calculate address of temperature sensor
 		addr = 0150 * level + 2496;
 		temp = *((int16_t *)(shm + addr));
@@ -84,7 +84,7 @@ void tempmonitor(int level)
 			for (struct tempnode *t = templist; t != NULL; t = t->next) {
 				sorttemp[count++] = t->temperature;
 			}
-			qsort(sorttemp, MEDIAN_WINDOW, sizeof(int), compare);
+			qsort(sorttemp, MEDIAN_WINDOW, sizeof(int), compare); // !!NASA Power of 10: #7 (Check return value of all non-void functions)!! (compare)
 			mediantemp = sorttemp[(MEDIAN_WINDOW - 1) / 2];
 			
 			// Add median temp to linked list
@@ -127,11 +127,11 @@ void tempmonitor(int level)
 	}
 }
 
-void *openboomgate(void *arg)
+void *openboomgate(void *arg) // !!NASA Power of 10: #9 (Function pointers are not allowed)
 {
 	struct boomgate *bg = arg;
 	pthread_mutex_lock(&bg->m);
-	for (;;) {
+	for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!!
 		if (bg->s == 'C') {
 			bg->s = 'R';
 			pthread_cond_broadcast(&bg->c);
@@ -144,7 +144,7 @@ void *openboomgate(void *arg)
 	
 }
 
-int main()
+int main() // Must have input declarations
 {
 	shm_fd = shm_open("PARKING", O_RDWR, 0);
 	shm = (volatile void *) mmap(0, 2920, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
@@ -154,9 +154,9 @@ int main()
 	for (int i = 0; i < LEVELS; i++) {
 		pthread_create(threads + i, NULL, (void *(*)(void *)) tempmonitor, (void *)i);
 	}
-	for (;;) {
+	for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!!
 		if (alarm_active) {
-			goto emergency_mode;
+			goto emergency_mode; // !!NASA Power of 10: #1 (Avoid complex flow constructs, like goto)!!
 		}
 		usleep(1000);
 	}
@@ -186,7 +186,7 @@ int main()
 	}
 	
 	// Show evacuation message on an endless loop
-	for (;;) {
+	for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!!
 		char *evacmessage = "EVACUATE ";
 		for (char *p = evacmessage; *p != '\0'; p++) {
 			for (int i = 0; i < ENTRANCES; i++) {
