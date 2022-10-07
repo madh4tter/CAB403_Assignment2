@@ -7,19 +7,6 @@
  *********************************************************************/
 #pragma once
 
-//#include <stdbool.h>
-#include <fcntl.h>
-#include <semaphore.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
 /**
  * Monitor the status of the LPR sensors and keep track of where each car is in the car
  * park
@@ -56,29 +43,7 @@
 */
 
 
-// Get shared memory and check it works (What infomation is being shared to manager?)
-bool get_shared_memory(shared_mem_t* shm, const char* share_name)
-{
-    if (shm->data == NULL || shm->name == NULL) 
-    {
-        return;
-    }
-
-    shm->fd = shm_open(share_name, O_RDWR, 0);
-    if (shm->fd == -1)
-    {
-        shm->data = NULL;
-        return false;
-    }
-
-    shm->data = mmap(0,sizeof(shared_data_t), (PROT_WRITE | PROT_READ), MAP_SHARED, shm->fd,0);
-    if (shm->data < 0)
-    {
-        return false;
-    }
-
-    return true;
-}
+// Get shared memory and check it works (What infomation is being shared to manager?)\
 
 // Create a vechicle type to store infomation about each vechile that comes in
 
