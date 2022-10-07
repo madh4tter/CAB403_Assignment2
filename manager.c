@@ -349,18 +349,14 @@ void enterance_boomgate_2(p_enterance_t *ent)
         {
             pthread_mutex_lock(&ent->gate->lock);
             ent->gate->status = 'R';
-            // while (ent->gate->status == 'R')
-            // {
-            //     pthread_cond_wait(&ent->gate->cond, &ent->gate->lock);
-            // }
-            // usleep(SLEEPTIME * 1000);
-            pthread_mutex_lock(&ent->gate->lock);
-        }
-
-        if (ent->gate->display == 'R')
-        {
-            pthread_mutex_lock(&ent->gate->lock);
+            while (ent->gate->status == 'R')
+            {
+                pthread_cond_wait(&ent->gate->cond, &ent->gate->lock);
+                usleep(SLEEPTIME * 20);
+            }
+            usleep(20); // Gate Opening
             ent->gate->status = '0';
+
             usleep(SLEEPTIME * 1000);
             pthread_mutex_unlock(&ent->gate->lock);
         }
@@ -471,7 +467,7 @@ int main()
     // Start threads
     for (int i = 0; i < ENTRY_GATES; i++)
     {
-        error = pthread_create(&enter_thread[i], NULL, &enterance_operation, NULL);
+        error = pthread_create(&enter_thread[i], NULL, enterance_operation, NULL);
         if (error != 0)
         {
             printf("Error creating thread: {0}\n", i);
