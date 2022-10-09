@@ -15,11 +15,8 @@
 #include <PARKING.h>
 #include <simulator.c>
 #include <hash_table_funcations.c>
+#include <linked_list.c>
 
-#define ENTRY_GATES 1 //5
-#define EXIT_GATES 1 //5
-#define LEVELS 2 //5
-#define CAPACITY 5 //20
 #define NONE '\0' // No value input in LPR
 
 #define SLEEPTIME 2
@@ -68,61 +65,25 @@ typedef struct vehicle
     int level; // Where level is the vehicle on
     bool left; // Is the vehicle still in the building
     time_t arrival; // When did the vehicle arrive (For billing)
-    int park; // What number of car that came in (1 for first vehicle, 2 for second)
 }  vehicle_t;
 
 // Visual array of where the vehicle can come and go from
 vehicle_t* car_park_1[LEVELS][CAPACITY] = { NULL };
+// Create link list
+node_t *car_list = NULL;
 
-
-// Enternce of Car Park
-
-// Car park has space
-// Car count per level
-int car_count_level(vehicle_t *(car_park)[LEVELS][CAPACITY])
-{
-    int car_count[LEVELS] = {0};
-    for (int i = 0; i < LEVELS; i++)
-    {
-        for (int j = 0; j < CAPACITY; j++)
-        {
-            if (&car_park[i][j] != NULL)
-            {
-                car_count[i]++;
-            }
-        }
-    }
-
-    return car_count[LEVELS];
-}
+// Enternce of Car Park //////////////////////////////////////////////////////////
 
 // Car count total
-int car_count_total(vehicle_t *(car_park)[LEVELS][CAPACITY])
+int car_count_total(node_t *head)
 {
     int car_count_total = 0;
-    int car_count_levels[LEVELS] = car_count_func(car_park);
+    int car_count_levels[LEVELS] = car_count_level(head);
     for (int i = 0; i < LEVELS; i++)
     {
         car_count_total = car_count_total + car_count_levels[i];
     }
     return car_count_total;
-}
-
-// The Find Car Park
-int car_location(vehicle_t *(car_park)[LEVELS][CAPACITY], int level)
-{
-    int park = 0;
-    for (int i = 0; i < CAPACITY; i++)
-    {
-        if (&car_park[level][i] == NULL)
-        {
-            park = i + 1;
-            return park;
-        }
-    }
-
-
-    return park;
 }
 
 // Assign Level
@@ -141,6 +102,20 @@ char level_assign(int *car_count[LEVELS])
     char level_char = min + '0'; // Convert to char
 
     return level_char;
+}
+
+// Count cars per level linked list
+int *car_count_level(node_t *head)
+{
+    int counter[LEVELS]
+    char holder
+    for (; head != NULL; head->next)
+    {
+        holder = head->vehicle->level;
+        counter[holder - '0']++;
+    }
+
+    return counter;
 }
 
 // Read licence plates, chooses where a car goes and saves it in an array
@@ -166,14 +141,12 @@ void lpr_enterence(p_enterance_t *ent)
         if(ent->lpr->plate[0] != NONE) // If the vehcile is allowed in and if there is a car at the gate
         {
             pthread_mutex_lock(&car_park_lock);
-            car_count = car_count_total(car_park_1); // funcation to get car_count
+            car_count = car_count_total(car_list); // funcation to get car_count
+
             if (car_count < (LEVELS * CAPACITY))
             {
-                car_count++;
                 car_count_levels[LEVELS] = car_count_level(car_park_1);
                 assign_level = level_assign(car_count_levels); // Send to level
-                park = car_location(car_park_1, assign_level);
-                pthread_mutex_unlock(&car_park_lock);
 
                 // Change screen to assigned level
                 pthread_mutex_lock(&ent->screen->lock);
@@ -192,6 +165,10 @@ void lpr_enterence(p_enterance_t *ent)
                 pthread_mutex_lock(&ent->screen->lock);
                 ent->screen->display = '0'; // Clears the screen
                 pthread_mutex_unlock(&ent->screen->lock);
+
+                // Add car to linked list
+                node_t *newhead = node_add(car_list, new_vehicle);
+                pthread_mutex_unlock(&car_park_lock);
             }
             else
             {
@@ -208,13 +185,12 @@ void lpr_enterence(p_enterance_t *ent)
             *ent->screen->display = 'X';
             pthread_mutex_unlock(&ent->screen->lock);
         }
-        //ent->lpr->plate[0] == NONE;
+        // ent->lpr->plate[0] == NONE;
         // pthread_cond_signal(ent->screen->cond);
     }
 
     pthread_mutex_unlock(ent->lpr->lock);
 }
-
 
 // Enternace boom gate (best)
 void enterance_boomgate_good(p_enterance_t *ent)
@@ -308,36 +284,34 @@ void enterance_boomgate_other(p_enterance_t *ent)
     }
 }
 
-int level_finder(char lpr_plate[6], vehicle_t *(car_park)[LEVELS][CAPACITY])
+// Level Adjustments ////////////////////////////////////////////////////////////
+typedef struct level_tracker
 {
-    for (int i = 0; i < LEVELS; i++)
-    {
-        for (int j = 0; j < CAPACITY; j ++)
-        {
-            if (&car_park[i][j]->licence_plate == lpr_plate)
-            {
-                return 
-            }
-        }
-    } 
-}
+    level_t *level;
+    int floor;
+} level_tracker_t;
 
-void level_lpr(level_t *lvl)
+
+void level_lpr(level_tracker_t *lvl)
 {
     char level;
+    node_t find;
+
     while (1)
     {
-        if(lvl->lpr->plate != NONE)
+        pthread_mutex_lock(lvl->level->lpr->lock)
+        if (lvl->lpr->plate != NONE)
         {
-
+           find = node_find_lp(car_list, lvl->level->lpr->plate)
+           if (find != NULL)
+           {
+                find->vehicle->level = level_tracker_t->floor;
+           }
         }
+        pthread_mutex_unlock(lvl->level->lpr->lock)
     }
 }
 
-void* enterance_operation(void *arg) // Bad idea
-{
-    return NULL;
-}
 
 // Main function
 int main()

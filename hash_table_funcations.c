@@ -12,8 +12,6 @@
 #include <time.h>
 #include <string.h>
 
-#include <manager.c>
-
 // Creating Hashtable
 // Definine 6 char as the item to store in the hash table (6 chars in licence plate)
 typedef struct item item_t;
