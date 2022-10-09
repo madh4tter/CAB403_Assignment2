@@ -52,13 +52,13 @@ node_t *node_find_lp(node_t *head, char *lp)
     return NULL
 }
 
-node_t *delete(node_t *head, char *level)
+node_t *node_delete(node_t *head, char *lp)
 {
     node_t *previous = NULL;
     node_t *current = head;
     while(current != NULL)
     {
-        if (strcmp(level, current->person->level) == 0)
+        if (strcmp(lp, current->vehicle->licence_plate) == 0)
         {
             // node_t *newhead = head;
             if(previous == NULL) // first item in list

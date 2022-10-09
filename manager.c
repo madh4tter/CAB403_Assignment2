@@ -18,7 +18,6 @@
 #include <linked_list.c>
 
 #define NONE '\0' // No value input in LPR
-
 #define SLEEPTIME 2
 #define GATETIME 1
 
@@ -57,20 +56,20 @@ pthread_t boom_gates_exit[EXIT_GATES];
 // Mutex's needed for lpr_enterence funcation
 pthread_mutex_t car_park_lock; // New Car Array Lock
 
-
 // Vehicle
 typedef struct vehicle
 {
     char* licence_plate; // What is the licence plate of the vehicle
     int level; // Where level is the vehicle on
-    bool left; // Is the vehicle still in the building
     time_t arrival; // When did the vehicle arrive (For billing)
 }  vehicle_t;
 
 // Visual array of where the vehicle can come and go from
-vehicle_t* car_park_1[LEVELS][CAPACITY] = { NULL };
+// vehicle_t* car_park_1[LEVELS][CAPACITY] = { NULL }; // Not anymore (ha)
 // Create link list
 node_t *car_list = NULL;
+
+
 
 // Enternce of Car Park //////////////////////////////////////////////////////////
 
@@ -119,14 +118,14 @@ int *car_count_level(node_t *head)
 }
 
 // Read licence plates, chooses where a car goes and saves it in an array
-void lpr_enterence(p_enterance_t *ent)
+void enterence_lpr(p_enterance_t *ent)
 {
     int car_count;
     int car_count_levels[LEVELS];
     int park;
     char assign_level;
 
-    pthread_mutex_lock(ent->lpr->lock);
+    pthread_mutex_lock(&ent->lpr->lock);
 
     // Forever loop
     while(1)
@@ -158,9 +157,6 @@ void lpr_enterence(p_enterance_t *ent)
                 new_vehicle->licence_plate = (char*)ent->lpr->plate;
                 new_vehicle->level = (int)assign_level - '0';
                 new_vehicle->arrival = clock();
-                new_vehicle->left = false;
-                new_vehicle->park = 10;
-                car_park_1[new_vehicle->level - 1][new_vehicle->park - 1] = new_vehicle;
 
                 pthread_mutex_lock(&ent->screen->lock);
                 ent->screen->display = '0'; // Clears the screen
@@ -192,8 +188,12 @@ void lpr_enterence(p_enterance_t *ent)
     pthread_mutex_unlock(ent->lpr->lock);
 }
 
+
+
+// Boomgates //////////////////////////////////////////////////////////////////////
+
 // Enternace boom gate (best)
-void enterance_boomgate_good(p_enterance_t *ent)
+void boomgate_good(p_enterance_t *ent)
 {
 
     // Start of closed
@@ -245,7 +245,7 @@ void enterance_boomgate_good(p_enterance_t *ent)
 }
 
 // Enternace boom gate
-void enterance_boomgate_other(p_enterance_t *ent)
+void boomgate_other(p_enterance_t *ent)
 {
     pthread_mutex_lock(&ent->boom->lock);
     ent->gate->status = 'C';
@@ -284,7 +284,10 @@ void enterance_boomgate_other(p_enterance_t *ent)
     }
 }
 
+
+
 // Level Adjustments ////////////////////////////////////////////////////////////
+
 typedef struct level_tracker
 {
     level_t *level;
@@ -299,7 +302,7 @@ void level_lpr(level_tracker_t *lvl)
 
     while (1)
     {
-        pthread_mutex_lock(lvl->level->lpr->lock)
+        pthread_mutex_lock(&lvl->level->lpr->lock)
         if (lvl->lpr->plate != NONE)
         {
            find = node_find_lp(car_list, lvl->level->lpr->plate)
@@ -308,9 +311,39 @@ void level_lpr(level_tracker_t *lvl)
                 find->vehicle->level = level_tracker_t->floor;
            }
         }
-        pthread_mutex_unlock(lvl->level->lpr->lock)
+        pthread_mutex_unlock(&lvl->level->lpr->lock)
     }
 }
+
+
+
+// Exit of Car Park /////////////////////////////////////////////////////////////////////
+
+void lpr_exit(exit_t *ext)
+{
+    pthread_mutex_lock(ext->lpr->lock);
+    while(1)
+    {
+        while (ext->lpr->plate == NONE)
+        {
+            pthread_cond_wait(ext->lpr->cond, ext->lpr->lock); // Wait until another thread
+        }
+
+        if (ext->lpr->plate != NONE)
+        {
+            pthread_mutex_lock(&car_park_lock);
+
+            // Remove from list
+            car_list = node_delete(car_list, ext->lpr->plate);
+
+            // Bill that person and save the bill
+        }
+
+    }
+}
+
+
+// Fire Alarm ///////////////////////////////////////////////////////////////////////////
 
 
 // Main function
