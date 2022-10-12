@@ -13,7 +13,6 @@
 #include <string.h>
 
 #include "PARKING.h"
-//#include <hash_table_funcations.c>
 #include "linked_list.h"
 
 #define NONE '\0' // No value input in LPR
@@ -22,6 +21,8 @@
 #define RATE 0.05
 #define CAPACITY 1
 #define SHARE_NAME "/xyzzy_123"
+#define MONEY_FILE "MONEY_FILE.txt"
+#define PLATES_FILE "plates.txt"
 
 // Need to change some define names to match the same in the PARKING.h file
 
@@ -56,15 +57,22 @@ pthread_t exit_thread[EXITS];
 pthread_t level_thread[LEVELS];
 pthread_t boom_gates_enter[ENTRANCES];
 pthread_t boom_gates_exit[EXITS];
+pthread_t temp_thread;
+pthread_t user_thread;
+
+// Global Variables
+shm_t shm;
+double revenue = 0;
+bool rate_of_rise_fire = false;
+bool fixed_tempture_fire = false;
+bool end = false;
 
 // Mutex's needed for lpr_enterence funcation
 pthread_mutex_t car_park_lock; // New Car Array Lock
-double revenue = 0;
 
-// Visual array of where the vehicle can come and go from
-// vehicle_t* car_park_1[LEVELS][CAPACITY] = { NULL }; // Not anymore (ha)
 // Create link list
 node_t *car_list = NULL;
+node_t *allowed_list = NULL;
 
 // Get Shared Objects
 bool shared_objects(shm_t* shm, const char* name)
@@ -104,6 +112,36 @@ void destroy_shared_object(shm_t* shm )
 
 // Enternce of Car Park //////////////////////////////////////////////////////////
 
+// Allowed cars in linked list
+void allowed_add(node_t *head, const char *plates_file)
+{
+    FILE* text = fopen(plates_file, "r");
+    char line[10];
+    while(fgets(line, sizeof(line), text))
+    {
+        vehicle_t* new_vehicle = malloc(sizeof(vehicle_t));
+        new_vehicle->licence_plate = line;
+        new_vehicle->arrival = NULL;
+        new_vehicle->level = NULL;
+        node_t *newhead = node_add(allowed_list, new_vehicle);
+        allowed_list = newhead;
+    }
+}
+
+// Count cars per level linked list
+int *car_count_level(node_t *head)
+{
+    int counter[LEVELS];
+    char holder;
+    for (; head != NULL; head->next)
+    {
+        holder = head->vehicle->level;
+        counter[holder - '0']++;
+    }
+
+    return counter;
+}
+
 // Car count total
 int car_count_total(node_t *head)
 {
@@ -134,27 +172,14 @@ char level_assign(int *car_count[LEVELS])
     return level_char;
 }
 
-// Count cars per level linked list
-int *car_count_level(node_t *head)
-{
-    int counter[LEVELS];
-    char holder;
-    for (; head != NULL; head->next)
-    {
-        holder = head->vehicle->level;
-        counter[holder - '0']++;
-    }
-
-    return counter;
-}
-
 // Read licence plates, chooses where a car goes and saves it in an array
 void enterance_operation(entrance_t *ent)
 {
     int car_count;
     int car_count_levels[LEVELS];
-    int park;
+    char holder;
     char assign_level;
+    node_t *find;
 
     pthread_mutex_lock(&ent->LPR.lock);
 
@@ -168,7 +193,8 @@ void enterance_operation(entrance_t *ent)
             // Check if there is an emergenccy
         }
 
-        if(ent->LPR.plate[0] != NONE) // If the vehcile is allowed in and if there is a car at the gate
+        holder = ent->LPR.plate;
+        if(node_find_lp(allowed_list, holder) != NULL) // If the vehcile is allowed in and if there is a car at the gate
         {
             pthread_mutex_lock(&car_park_lock);
             car_count = car_count_total(car_list); // funcation to get car_count
@@ -195,6 +221,7 @@ void enterance_operation(entrance_t *ent)
 
                 // Add car to linked list
                 node_t *newhead = node_add(car_list, new_vehicle);
+                car_list = newhead;
                 pthread_mutex_unlock(&car_park_lock);
             }
             else
@@ -212,8 +239,8 @@ void enterance_operation(entrance_t *ent)
             ent->screen.display = 'X';
             pthread_mutex_unlock(&ent->screen.lock);
         }
-        // ent->lpr->plate[0] == NONE;
-        // pthread_cond_signal(ent->screen->cond);
+        ent->LPR.plate[0] == NONE;
+        pthread_cond_signal(ent->screen.cond);
     }
 
     pthread_mutex_unlock(ent->LPR.lock);
@@ -372,7 +399,6 @@ void lpr_exit(exit_t *ext)
 
             // Remove from list
             car_list = node_delete(car_list, ext->LPR.plate);
-
             pthread_mutex_unlock(&car_park_lock);
         }
 
@@ -383,9 +409,118 @@ void lpr_exit(exit_t *ext)
 
 
 // Fire Alarm ///////////////////////////////////////////////////////////////////////////
+void tempture_controller(shm_t *shm)
+{
+    int start_temp = 25;
+    int base_temp = 10;
+    int change[3] = {-1, 0, 1};
+
+    // Start random
+    srand(time(NULL));
+
+    // At the start
+    if(shm->data.levels[0].temp == 0)
+    {
+        int temp = (rand() % start_temp) + base_temp;
+    }
+    // While running
+    else
+    {
+        int random_index = rand() % len(change);
+        int random_change = change[random_index];
+        for (int i = 0; i < LEVELS; i++)
+        {
+            if(shm->data.levels[i].temp > 10)
+            {
+                shm->data.levels[i].temp += change[2];
+            }
+            if(shm->data.levels[i].temp < 40)
+            {
+                shm->data.levels[i].temp += change[0];
+            }
+            else
+            {
+                shm->data.levels[i].temp += random_change; 
+            }
+        }
+    }
+}
+
+void rate_of_rise(shm_t *shm)
+{
+    int change = 1;
+    int choose = rand() % LEVELS;
+    
+    for(int i = 0; i < LEVELS; i++)
+    {
+        if (choose = i)
+        {
+            shm->data.levels[i].temp += change; 
+        }
+    }
+}
+
+void fixed_tempture(shm_t *shm)
+{
+    int large_temp;
+    int choose = rand() % LEVELS;
+    
+    for(int i = 0; i < LEVELS; i++)
+    {
+        if (choose = i)
+        {
+            shm->data.levels[i].temp = 60; 
+        }
+    }
+}
+
+void tempture_update(shm_t *shm)
+{
+    while (1)
+    {
+        if (fixed_tempture_fire)
+        {
+            rate_of_rise(shm);
+            sleep(1);
+        }
+        if (rate_of_rise_fire)
+        {
+            fixed_tempture(shm);
+            sleep(1);
+        }
+        else
+        {
+            tempture_controller(shm);
+            sleep(1);
+        }
+    }
+    
+}
+
+void check_fire_start(shm_t *shm)
+{
+    char input;
+    while(1)
+    {
+        input = getchar();
+        if(input == "r")
+        {
+            rate_of_rise_fire = true;
+        }
+        if(input == "f")
+        {
+            fixed_tempture_fire = true;
+        }
+        if(input = "q")
+        {
+            end = true;
+        }
+    }
+}
 
 
 // Lets talk money $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
 void money(vehicle_t* car)
 {
     // Open file
@@ -428,10 +563,12 @@ int main(void)
 {
     int error; // Variable to determine if there is an error
     bool check;
-    shm_t shm;
 
     // Get Shared Memory
     check = shared_objects(&shm, SHARE_NAME);
+
+    // Pass through allowed licence plates
+    allowed_add(allowed_list, PLATES_FILE);
 
     // Start mutex's
     if (pthread_mutex_init(&car_park_lock, NULL) != 0)
@@ -441,32 +578,125 @@ int main(void)
     }
 
     // Start threads
+    // Enterence thread
     for (int i = 0; i < ENTRANCES; i++)
     {
         // The enterances for the cars
-        error = pthread_create(&enter_thread[i], NULL, enterance_operation, NULL);
+        error = pthread_create(&enter_thread[i], NULL, (void*)enterance_operation, &shm.data.entrances[i]);
         if (error != 0)
         {
             printf("Error creating thread: {0}\n", i);
         }
 
         // The boomgates for each enterance
-        error = pthread_create(&boom_gates_enter[i], NULL, (void*)boomgate_good, &shm->data->entrances[i]);
+        error = pthread_create(&boom_gates_enter[i], NULL, (void*)boomgate_good, &shm.data.entrances[i]);
+        if (error != 0)
+        {
+            printf("Error creating boomgate: {0}\n", i);
+        }
+    // Level Threads
+    for (int i = 0; i < LEVELS; i++)
+    {
+        error = pthread_create(&level_thread[i], NULL, (void*)level_lpr, &shm.data.levels[i]);
         if (error != 0)
         {
             printf("Error creating boomgate: {0}\n", i);
         }
     }
+    // Exit threads
     for (int i = 0; i < EXITS; i++)
     {
-        error = pthread_create(&boom_gates_exit[i], NULL, (void*)boomgate_good, &shm->data->exits[i]);
+        // The enterances for the cars
+        error = pthread_create(&exit_thread[i], NULL, (void*)lpr_exit, &shm.data.exits[i]);
+        if (error != 0)
+        {
+            printf("Error creating thread: {0}\n", i);
+        }
+
+        error = pthread_create(&boom_gates_exit[i], NULL, (void*)boomgate_good, &shm.data.exits[i]);
         if (error != 0)
         {
             printf("Error creating boomgate: {0}\n", i);
         }
     }
+    // Temp
+    error = pthread_create(&temp_thread, NULL, (void*)tempture_update, &shm);
+    if (error != 0)
+    {
+        printf("Error creating thread: temp_thread\n");
+    }
+    // User check
+    error = pthread_create(&user_thread, NULL, (void*)check_fire_start, &shm);
+    if (error != 0)
+    {
+        printf("Error creating thread: user_thread", i);
+    }   
 
 
+    while(end == false)
+    {
+        usleep(100);
+    }
+
+
+    // End threads
+    // Enterence thread
+    for (int i = 0; i < ENTRANCES; i++)
+    {
+        // The enterances for the cars
+        error = pthread_join(&enter_thread[i], NULL);
+        if (error != 0)
+        {
+            printf("Error ending thread: {0}\n", i);
+        }
+
+        // The boomgates for each enterance
+        error = pthread_join(&boom_gates_enter[i], NULL);
+        if (error != 0)
+        {
+            printf("Error ending boomgate: {0}\n", i);
+        }
+    }
+    // Level Threads
+    for (int i = 0; i < LEVELS; i++)
+    {
+        error = pthread_join(&level_thread[i], NULL);
+        if (error != 0)
+        {
+            printf("Error ending boomgate: {0}\n", i);
+        }
+    }
+    // Exit threads
+    for (int i = 0; i < EXITS; i++)
+    {
+        // The enterances for the cars
+        error = pthread_join(&exit_thread[i], NULL);
+        if (error != 0)
+        {
+            printf("Error ending thread: {0}\n", i);
+        }
+
+        error = pthread_join(&boom_gates_exit[i], NULL);
+        if (error != 0)
+        {
+            printf("Error ending boomgate: {0}\n", i);
+        }
+    }
+    // Temp
+    error = pthread_join(&temp_thread, NULL);
+    if (error != 0)
+    {
+        printf("Error ending thread: temp_thread\n");
+    }
+    // User check
+    error = pthread_join(&user_thread, NULL);
+    if (error != 0)
+    {
+        printf("Error ending thread: user_thread", i);
+    }   
+
+    // Print revenue
+    printf("The total revenue is: {0}", revenue);
 
     // Clean up everything
     destroy_shared_object(&shm);
