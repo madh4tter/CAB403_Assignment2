@@ -9,6 +9,8 @@
 #pragma once
 #include <semaphore.h>
 
+#define SHARE_NAME "PARKING"
+
 /* Define characteristics of car-park */
 #define ENTRANCES 1
 #define EXITS 1
@@ -64,7 +66,7 @@ typedef struct PARKING {
     exit_t exits[EXITS];
     level_t levels[LEVELS];
 
-} PARKING;
+} PARKING_t;
 
 /* Shared memory object */
 typedef struct shared_memory {
@@ -75,6 +77,29 @@ typedef struct shared_memory {
     int fd;
 
     /// Address of the shared data block. 
-    PARKING data;
+    PARKING_t* data;
 
 } shm_t;
+
+bool get_shared_object( shm_t* shm, const char* share_name ) {
+    // Get a file descriptor connected to shared memory object and save in 
+    // shm->fd. If the operation fails, ensure that shm->data is 
+    // NULL and return false.
+    shm->fd = shm_open(share_name, O_RDWR, 0666);
+    // Check if shm_open worked
+    if(shm->fd == -1){
+        shm->data = NULL;
+        return false;
+    }
+
+    // Otherwise, attempt to map the shared memory via mmap, and save the address
+    // in shm->data. If mapping fails, return false.
+    shm->data = mmap(NULL, sizeof(PARKING_t), PROT_READ | PROT_WRITE, MAP_SHARED, 
+                    shm->fd, 0);
+    if(shm->data == (void *)-1){
+        return false; 
+    }
+
+    // Modify the remaining stub only if necessary.
+    return true;
+}
