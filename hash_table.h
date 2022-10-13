@@ -12,19 +12,16 @@
 #include <time.h>
 #include <string.h>
 
-// Creating Hashtable
-// Definine 6 char as the item to store in the hash table (6 chars in licence plate)
 typedef struct item item_t;
 struct item
 {
-    char key[1]; // Counter
-    int value; // Level (value)
+    char value[6]; // Level (value)
     item_t *next;
 };
 
 void item_print(item_t *i)
 {
-    printf("key=%s value=%d", i->key, i->car);
+    printf("key=%s value=%d", i->value);
 }
 
 // Hash table mapping
@@ -44,47 +41,25 @@ bool htab_init(htab_t *h, size_t n)
 }
 
 // Bernstein hash funcation
-size_t djb_hash(char *s)
+size_t djb_hash(char s[6])
 {
     size_t hash = 5381;
     int c;
-    while ((c = *s++) != '\0')
+    for (int i = 0; i < 6; i++)
     {
-        hash = ((hash << 5) + hash) + c;
+        hash = ((hash << 5) + hash) + s[i];
     }
     return hash;
 }
 
 // Calculate the offset for the bucket for key in hash table (Where the number plate starts)
-size_t htab_index(htab_t *h, vehicle_t *value)
+size_t htab_index(htab_t *h, char *value)
 {
     char temp[6];
-
-    for (int i = 0; i < 6; i++)
-    {
-        temp[i] = value->licence_plate[i];
-    }
-
+    strcpy(temp, value);
     return djb_hash(temp) % h -> size;
 }
 
-// Find pointer to head of list for key in hash table.
-item_t *htab_bucket(htab_t *h, char *value)
-{
-    return h->buckets[htab_index(h, value)];
-}
-
-item_t *htab_find(htab_t *h, char *value)
-{
-    for (item_t *i = htab_bucket(h, value); i != NULL; i = i->next)
-    {
-        if (strcmp(i->key, value) == 0)
-        { 
-            return i;
-        }
-    }
-    return NULL;
-}
 
 // Hash table add
 bool htab_add(htab_t *h, char *licence_plate)
@@ -94,9 +69,8 @@ bool htab_add(htab_t *h, char *licence_plate)
     {
         return false;
     }
-
     strncpy(new_item->value, licence_plate, 6);
-    new_item->
+    h->buckets[htab_index(h, licence_plate)] = new_item;
 
     return true; // Check if the process worked
 }
@@ -120,4 +94,57 @@ void htab_destory(htab_t *h)
     free(h->buckets);
     h->buckets = NULL;
     h->size = 0;
+}
+
+bool check_bucket(item_t *head, char *input)
+{
+    for (; head != NULL; head = head->next)
+    {
+        if(strcmp(input, head->value))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool plate_check(htab_t *h, char *input)
+{
+    item_t *head = h->buckets[(djb_hash((char*)input) % h->size)];
+    if (head == NULL)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+// DEBUGGING
+void print_htab_bucket(item_t* bucket){
+    for (int i = 0; i < 6; i++)
+    {
+        printf("%c", bucket->value[i]);
+    }
+    printf(" -> ");
+    if (bucket->next != NULL)
+    {
+        print_htab_bucket(bucket->next);
+    }
+    
+    
+}
+
+// DEBUGGING
+void print_htab(htab_t* h) {
+    for (int i = 0; i < h->size; i++) {
+        printf("Bucket %d: ", i);
+        if (h->buckets[i] == NULL)
+        {
+            printf(" EMPTY");
+        } else {
+            print_htab_bucket(h->buckets[i]);
+        }
+        printf("\n");
+    }   
 }
