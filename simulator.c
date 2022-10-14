@@ -18,6 +18,8 @@
 #include "PARKING.h"
 #include "simulator.h"
 
+#define ACC_CAR_AMT
+
 
 /* this value can count up to 9*10^18 ms or 292 million years
    if that's too big for memory, I can account for an overflow
@@ -26,6 +28,21 @@
    need to protect this value with a mutex?
 */
 mstimer_t runtime;
+
+/********************** MISC FUNCTIONS ********************************************/
+char *read_file(char *file) {
+    uint8_t limit = 6;
+   uint8_t car_amt = 100;
+    FILE* text = fopen(file, "r");
+    char line[limit];
+    char accepted_cars[car_amt][limit];
+    for(int i = 0; i<(car_amt); i++)
+    {
+        accepted_cars[i] = fgets(line, sizeof(line), text);
+    } 
+   return accepted_cars;
+}
+
 
 /**************** DYNAMIC VECTOR METHODS *****************************************/
 void cv_init( cv_t* vec ) {
@@ -217,6 +234,8 @@ void *thf_time(void *ptr){
 void *thf_creator(void *entr_qlist_void){
     cv_t *entr_qlist = entr_qlist_void;
 
+    char *acc_cars = read_file("plates.txt");
+   
     int counter=0;
     while(counter < 5){
         counter++;
