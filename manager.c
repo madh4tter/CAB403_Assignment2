@@ -182,10 +182,6 @@ void enterance_operation(entrance_t *ent)
                 new_vehicle->level = (int)assign_level - '0';
                 new_vehicle->arrival = clock() * 1000;
 
-                pthread_mutex_lock(&ent->screen.lock);
-                ent->screen.display = '0'; // Clears the screen
-                pthread_mutex_unlock(&ent->screen.lock);
-
                 // Add car to linked list
                 node_t *newhead = node_add(car_list, new_vehicle);
                 car_list = newhead;

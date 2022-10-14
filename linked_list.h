@@ -34,7 +34,7 @@ node_t *node_add(node_t *head, vehicle_t *car)
     return new;
 }
 
-node_t *node_find_level(node_t *head, char *level)
+node_t *node_find_level(node_t *head, const char *level)
 {
     for (; head != NULL; head = head->next)
     {
