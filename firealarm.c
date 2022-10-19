@@ -7,47 +7,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-int shm_fd = 0;
-volatile void *shm;
+#include "firealarm.h"
 
-int alarm_active = 0;
-pthread_mutex_t alarm_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t alarm_condvar = PTHREAD_COND_INITIALIZER;
-
-#define LEVELS 5
-#define ENTRANCES 5
-#define EXITS 5
-
-#define MEDIAN_WINDOW 5
-#define TEMPCHANGE_WINDOW 30
-
-struct boomgate {
-	pthread_mutex_t m;
-	pthread_cond_t c;
-	char s;
-};
-struct parkingsign {
-	pthread_mutex_t m;
-	pthread_cond_t c;
-	char display;
-};
-
-struct tempnode {
-	int temperature;
-	struct tempnode *next;
-};
-
-struct tempnode *deletenodes(struct tempnode *templist, int after) // !!NASA Power of 10: #9 (Function pointers are not allowed)
-{
-	if (templist->next) {
-		templist->next = deletenodes(templist->next, after - 1);
-	}
-	if (after <= 0) {
-		free(templist);
-		return NULL;
-	}
-	return templist;
-}
 int compare(const void *first, const void *second)
 {
 	return *((const int *)first) - *((const int *)second);
@@ -65,7 +26,8 @@ void tempmonitor(int level)
 	int mediantemp = 0;
 	int hightemps = 0;
 	
-	for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!!
+	while(alarm_active == 0){ // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- Fixed by changing it to only monitoring while the alarm is not active. Once the alarm is active, the system goes into 'alarm mode'. 
+																					// This can only be changed by resetting the whole system.
 		// Calculate address of temperature sensor
 		addr = 104 * level + 2496; // Changed octal to integer...
 		temp = *((int16_t *)(shm + addr));
@@ -91,7 +53,7 @@ void tempmonitor(int level)
 			for (struct tempnode *t = templist; t != NULL; t = t->next) {
 				sorttemp[count++] = t->temperature;
 			}
-			qsort(sorttemp, MEDIAN_WINDOW, sizeof(int), compare); // !!NASA Power of 10: #7 (Check return value of all non-void functions)!! (compare)
+			qsort(sorttemp, MEDIAN_WINDOW, sizeof(int), compare); 
 			mediantemp = sorttemp[(MEDIAN_WINDOW - 1) / 2];
 			
 			// Add median temp to linked list
@@ -138,21 +100,19 @@ void *openboomgate(void *arg) // !!NASA Power of 10: #9 (Function pointers are n
 {
 	struct boomgate *bg = arg;
 	pthread_mutex_lock(&bg->m);
-	for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!!
+	while(bg->s != 'O') { // !!NASA Power of 10: #2 (loops have fixed bounds)!! Thread now waits till the gate is open, then leaves it. Once it's done, it unlocks. 
 		if (bg->s == 'C') {
 			bg->s = 'R';
 			pthread_cond_broadcast(&bg->c);
 		}
-		if (bg->s == 'O') {
-		}
 		pthread_cond_wait(&bg->c, &bg->m);
-	}
-	pthread_mutex_unlock(&bg->m);
-	
+	} 
+	pthread_mutex_unlock(&bg->m); 
 }
 
 void emergency_mode(void)
 {
+	// char key = NULL;
 	fprintf(stderr, "*** ALARM ACTIVE ***\n");
 	
 	// Handle the alarm system and open boom gates
@@ -177,7 +137,7 @@ void emergency_mode(void)
 	}
 	
 	// Show evacuation message on an endless loop
-	for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!!
+	do { // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- FIXED BY HAVING EXIT KEY PROGRAMMED
 		char *evacmessage = "EVACUATE ";
 		for (char *p = evacmessage; *p != '\0'; p++) {
 			for (int i = 0; i < ENTRANCES; i++) {
@@ -189,8 +149,9 @@ void emergency_mode(void)
 				pthread_mutex_unlock(&sign->m);
 			}
 			usleep(20000);
+			// key = getchar(); // Old idea, would reset once the 'q' key is pressed. Updated to only reset when alarm_active is reset. This can be handled by a controller program. 
 		}
-	}
+	} while(alarm_active == 1)
 	
 	for (int i = 0; i < LEVELS; i++) {
 		pthread_join(threads[i], NULL);
@@ -201,7 +162,7 @@ void emergency_mode(void)
 }
 
 
-int main(void) // Must have input declarations
+int main(void) // Must have input declarations -- added 'void' input.
 {
 	shm_fd = shm_open("PARKING", O_RDWR, 0);
 	shm = (volatile void *) mmap(0, 2920, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
@@ -215,7 +176,6 @@ int main(void) // Must have input declarations
 	while(alarm_active == 0){
 		usleep(1000);
 	}
-
 	emergency_mode();
 
 	// for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- FIXED
