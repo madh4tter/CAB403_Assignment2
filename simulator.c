@@ -288,10 +288,15 @@ void *thf_time(void *ptr){
     return ptr;
 }
 
-cv_t *thf_creator(void *entr_qlist_void){
+void *thf_creator(void *entr_qlist_void){
     cv_t *entr_qlist = entr_qlist_void;
 
-    //char *acc_cars = read_file("plates.txt");
+    /* Create linked list for accepted car number plates */
+    node_t *acc_cars_head = NULL;
+    acc_cars_head = read_file("plates.txt", acc_cars_head);
+
+    /* Create linked list for cars existing in simulation */
+    node_t *sim_cars_head = NULL;
    
     int counter=0;
     while(counter < 5){
@@ -306,11 +311,21 @@ cv_t *thf_creator(void *entr_qlist_void){
         car_t *new_car = malloc(sizeof(car_t));
 
         /* assign random number plate */
-        bool exists;
+        bool exists = false;
+        int car_loc;
+        int count = 0;
         do {
             if(rand()%2){
-                // select from approved list
-                //new_car->plate = 
+                /* select from approved list */
+                car_loc = rand() % ACC_CAR_AMT;
+                for (; acc_cars_head != NULL; acc_cars_head = acc_cars_head->next){
+                    if (count >= car_loc){
+                        new_car->plate = acc_cars_head->car->plate;
+                        break;
+                    } else {
+                        count++;
+                    }
+                }
             } else {
                 /* Generate random */
                 for (int i=0; i<3;i++){
@@ -319,21 +334,31 @@ cv_t *thf_creator(void *entr_qlist_void){
                 }
             }
 
-            // Check every value in existing cars list to see if it matches
-            exists = false;
+            /* Check every value in existing cars list to see if it matches if it matches, regenerate a LP*/
+            node_t *head_temp = sim_cars_head;
+            for (; head_temp != NULL; head_temp = head_temp->next){
+                if(!strcmp(head_temp->car->plate, new_car->plate)){
+                    exists = true;
+                }
+            }
         } while (exists == true);
 
+        /* Add onto list of existing cars*/
+        sim_cars_head = node_add(sim_cars_head, new_car);
+
+        //node_print(sim_cars_head);
+
         /* Randomly choose an entrance queue to add to */
+        /*
         int entr_ID = rand() % ENTRANCES;
         if(entr_ID < 1){
             entr_ID = 1;
         }
         cv_t queue = entr_qlist[entr_ID];
+        */
         /* Push new car onto start of queue */
-        cv_push(&queue, *new_car);
+        //cv_push(&queue, *new_car);
 
-        //printf("succesfully got here\n");
-        fflush(stdout);
     }
 
     for(int i = 0; i<5; i++){
@@ -372,7 +397,7 @@ int main(void){
 
     pthread_t time_th;
     pthread_t test_th;
-    //pthread_t creator_th;
+    pthread_t creator_th;
 
     pthread_mutex_init(&runtime.lock, NULL);
     pthread_mutex_init(&rand_lock, NULL);
@@ -384,40 +409,12 @@ int main(void){
         cv_init(&entr_qlist[i]);
     }
 
-/*
-    node_t *acc_cars_head = (node_t *)malloc(sizeof(node_t));
-    if(acc_cars_head == NULL){
-        printf("Memory allocation failure");
-        fflush(stdout);
-    }
 
-    // this is the problem
-    //acc_cars_head->car->plate = (char *)"okay\n";
-
-    //acc_cars_head = read_file("plates.txt", acc_cars_head);
-
-
-    printf("%ld", sizeof(node_t));
-    fflush(stdout);
-
-    
-
-    //node_print(acc_cars_head);
-*/
-    car_t *test_car1 = (car_t *)malloc(sizeof(car_t));
-    test_car1->plate = "TEST";
-
-    
-    node_t *acc_cars_head = NULL;
-    acc_cars_head = node_add(acc_cars_head, test_car1);
-
-    acc_cars_head = read_file("plates.txt", acc_cars_head);
-    node_print(acc_cars_head);
     
 
     pthread_create(&time_th, NULL, thf_time, NULL);
     pthread_create(&test_th, NULL, thf_test, NULL);
-    //pthread_create(&creator_th, NULL, thf_creator, &entr_qlist);
+    pthread_create(&creator_th, NULL, thf_creator, &entr_qlist);
 
 
 
@@ -426,7 +423,7 @@ int main(void){
 
     pthread_join(time_th, NULL);
     pthread_join(test_th, NULL);
-    //pthread_join(creator_th, NULL);
+    pthread_join(creator_th, NULL);
 
 
 
