@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-int shm_fd;
+int shm_fd = 0;
 volatile void *shm;
 
 int alarm_active = 0;
@@ -55,12 +55,19 @@ int compare(const void *first, const void *second)
 
 void tempmonitor(int level)
 {
-	struct tempnode *templist = NULL, *newtemp, *medianlist = NULL, *oldesttemp;
-	int count, addr, temp, mediantemp, hightemps;
+	struct tempnode *templist = NULL; 
+	struct tempnode *newtemp = NULL;
+	struct tempnode *medianlist = NULL;
+	struct tempnode *oldesttemp = NULL;
+	int count = 0;
+	int addr = 0;
+	int temp = 0;
+	int mediantemp = 0;
+	int hightemps = 0;
 	
 	for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!!
 		// Calculate address of temperature sensor
-		addr = 0150 * level + 2496;
+		addr = 104 * level + 2496; // Changed octal to integer...
 		temp = *((int16_t *)(shm + addr));
 		
 		// Add temperature to beginning of linked list
@@ -144,30 +151,14 @@ void *openboomgate(void *arg) // !!NASA Power of 10: #9 (Function pointers are n
 	
 }
 
-int main() // Must have input declarations
+void emergency_mode(void)
 {
-	shm_fd = shm_open("PARKING", O_RDWR, 0);
-	shm = (volatile void *) mmap(0, 2920, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-	
-	pthread_t *threads = malloc(sizeof(pthread_t) * LEVELS);
-	
-	for (int i = 0; i < LEVELS; i++) {
-		pthread_create(threads + i, NULL, (void *(*)(void *)) tempmonitor, (void *)i);
-	}
-	for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!!
-		if (alarm_active) {
-			goto emergency_mode; // !!NASA Power of 10: #1 (Avoid complex flow constructs, like goto)!!
-		}
-		usleep(1000);
-	}
-	
-	emergency_mode:
 	fprintf(stderr, "*** ALARM ACTIVE ***\n");
 	
 	// Handle the alarm system and open boom gates
 	// Activate alarms on all levels
 	for (int i = 0; i < LEVELS; i++) {
-		int addr = 0150 * i + 2498;
+		int addr = 104 * i + 2498; // Octal use not allowed, changed to integer scalar
 		char *alarm_trigger = (char *)shm + addr;
 		*alarm_trigger = 1;
 	}
@@ -207,4 +198,30 @@ int main() // Must have input declarations
 	
 	munmap((void *)shm, 2920);
 	close(shm_fd);
+}
+
+
+int main(void) // Must have input declarations
+{
+	shm_fd = shm_open("PARKING", O_RDWR, 0);
+	shm = (volatile void *) mmap(0, 2920, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+	
+	pthread_t *threads = malloc(sizeof(pthread_t) * LEVELS);
+	
+	for (int i = 0; i < LEVELS; i++) {
+		pthread_create(threads + i, NULL, (void *(*)(void *)) tempmonitor, (void *)i);
+	}
+
+	while(alarm_active == 0){
+		usleep(1000);
+	}
+
+	emergency_mode();
+
+	// for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- FIXED
+	// 	if (alarm_active) {
+	// 		emergency_mode(); // !!NASA Power of 10: #1 (Avoid complex flow constructs, like goto)!! -- FIXED
+	// 	}
+	// 	usleep(1000);
+	// }
 }
