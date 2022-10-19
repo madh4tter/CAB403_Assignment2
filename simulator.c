@@ -31,6 +31,7 @@
 */
 mstimer_t runtime;
 char acc_cars[ACC_CAR_AMT][PLATE_LENGTH];
+qnode_t *eqlist_head;
 
 
 
@@ -72,75 +73,35 @@ node_t *node_find_LP(node_t *head, char *plate){
 void node_print(node_t *head){
     for (; head != NULL; head = head->next)
     {
-        printf("%s\n", head->car->plate);
+        fprintf(stderr, head->car->plate);
         fflush(stdout);
     }
 }
 
-/**************** DYNAMIC VECTOR METHODS *****************************************/
-void cv_init( cv_t* vec ) {
-    vec->capacity = INITIAL_CAP;
-    vec->size = 0;
-    vec->data = malloc(INITIAL_CAP * sizeof(car_t));
-    if(vec->data == NULL){
-        printf("Failed to allocated memory for car vector\n");
+typedef struct queue_node qnode_t;
+
+struct queue_node {
+    node_t *queue;
+    qnode_t *next;
+    uint8_t entrID;
+};
+
+qnode_t *qnode_add(qnode_t *head, node_t *queue){
+    /* create new node to add to list */
+    qnode_t *new = (qnode_t *)malloc(sizeof(qnode_t));
+    if (new == NULL)
+    {
+        printf("Memory allocation failure");
         fflush(stdout);
+        return NULL;
     }
+
+    new->queue = queue;
+    new->next = head;
+
+    return new;
 }
 
-void cv_enscap( cv_t* vec, size_t new_size ) {
-    if(new_size <= vec->capacity){
-        // keep everything the same
-    } else {
-        /* ..................................................REMOVE THIS MAYBE*/
-        if(vec->capacity * DV_GROWTH_FACTOR > new_size) {
-            vec->capacity = vec->capacity * DV_GROWTH_FACTOR;
-        } else {
-            vec->capacity = new_size;
-        }
-        vec->data = realloc(vec->data, vec->capacity * sizeof(car_t));
-        if(vec->data == NULL){
-            printf("Realloc failed for car vector\n");
-            fflush(stdout);
-        }
-    }
-}
-
-void cv_push( cv_t* vec, car_t new_item ) {
-    cv_enscap(vec, vec->size + 1);
-    vec->size += 1;
-    vec->data[vec->size-1] = new_item;
-}
-
-car_t cv_pop( cv_t* vec ) {
-    car_t *removed = malloc(sizeof(car_t));
-
-    if(vec->size > 0){
-        car_t *pop_data_location = &(vec->data[vec->size]);
-        removed = pop_data_location;
-        pop_data_location = NULL;
-        vec->size -= 1;
-    }
-    return *removed;
-}
-
-/* ........................................... Might need to change this one to a search and compare*/
-/*
-car_t cv_remove_at( cv_t* vec, size_t pos ) {
-    if(pos <= vec->size){
-        car_t removed = vec->data[pos];
-        car_t next;
-        for(int i=pos; i<vec->size; i++){
-            next = vec->data[i+1];
-            vec->data[i] = next;
-        }
-        vec->size -= 1;
-
-        return removed;
-    } 
-    return NULL;
-}
-*/
 
 /*************************** SHARED MEMORY METHODS *********************************/
 
@@ -288,19 +249,23 @@ void *thf_time(void *ptr){
     return ptr;
 }
 
-void *thf_creator(void *entr_qlist_void){
-    cv_t *entr_qlist = entr_qlist_void;
-
+void *thf_creator(void *ptr){
     /* Create linked list for accepted car number plates */
     node_t *acc_cars_head = NULL;
     acc_cars_head = read_file("plates.txt", acc_cars_head);
 
     /* Create linked list for cars existing in simulation */
     node_t *sim_cars_head = NULL;
+
+    bool exists;
+    int car_loc;
+    int count;
+
+    qnode_t *eq_temp;
+    node_t *head_temp;
    
-    int counter=0;
-    while(counter < 5){
-        counter++;
+    while(1){
+        
         /* Wait between 1-100ms before generating another car */
         /* supposed to protect this with a mutex? seems to work fine without */
         int wait = (rand() % 99) + 1;
@@ -310,17 +275,22 @@ void *thf_creator(void *entr_qlist_void){
         /* create car */
         car_t *new_car = malloc(sizeof(car_t));
 
+        /* Initialise other values of the car */
+        new_car->entr_time = 0;
+        new_car->exit_time = 0;
+        new_car->lvl = 0;
+
         /* assign random number plate */
-        bool exists = false;
-        int car_loc;
-        int count = 0;
+        count = 0;
         do {
+            exists = false;
             if(rand()%2){
                 /* select from approved list */
                 car_loc = rand() % ACC_CAR_AMT;
-                for (; acc_cars_head != NULL; acc_cars_head = acc_cars_head->next){
+                head_temp = acc_cars_head;
+                for (; head_temp != NULL; head_temp = head_temp->next){
                     if (count >= car_loc){
-                        new_car->plate = acc_cars_head->car->plate;
+                        new_car->plate = head_temp->car->plate;
                         break;
                     } else {
                         count++;
@@ -334,41 +304,37 @@ void *thf_creator(void *entr_qlist_void){
                 }
             }
 
-            /* Check every value in existing cars list to see if it matches if it matches, regenerate a LP*/
-            node_t *head_temp = sim_cars_head;
+            /* Check every value in existing cars list to see if it matches. If it matches, regenerate an LP*/
+            head_temp = sim_cars_head;
             for (; head_temp != NULL; head_temp = head_temp->next){
                 if(!strcmp(head_temp->car->plate, new_car->plate)){
                     exists = true;
                 }
             }
+
         } while (exists == true);
 
         /* Add onto list of existing cars*/
         sim_cars_head = node_add(sim_cars_head, new_car);
 
-        //node_print(sim_cars_head);
 
         /* Randomly choose an entrance queue to add to */
-        /*
-        int entr_ID = rand() % ENTRANCES;
-        if(entr_ID < 1){
-            entr_ID = 1;
+        int entranceID = rand() % (ENTRANCES);
+
+        /* Find dynamic car queue in list of entrances*/
+        eq_temp = eqlist_head;
+        for(; eq_temp != NULL; eq_temp = eq_temp->next){
+            if(eq_temp->entrID == entranceID){
+                break;
+            }
         }
-        cv_t queue = entr_qlist[entr_ID];
-        */
+
         /* Push new car onto start of queue */
-        //cv_push(&queue, *new_car);
-
+        node_add(eq_temp->queue, new_car);
+        
+        
     }
-
-    for(int i = 0; i<5; i++){
-        //printf("%s", entr_qlist[i].data->plate);
-        fflush(stdout);
-    }
-
-    
-    return entr_qlist;
-
+    return ptr;
 }
 
 void *thf_entr(void *ptr){
@@ -404,17 +370,30 @@ int main(void){
 
     pthread_cond_init(&runtime.cond, NULL);
 
-    cv_t entr_qlist[ENTRANCES];
-    for(int i = 0; i < ENTRANCES; i++){
-        cv_init(&entr_qlist[i]);
+    /* testing only */
+    car_t *testcar = (car_t *)malloc(sizeof(car_t));
+    testcar->plate = "TESTER";
+    testcar->entr_time=1000;
+    testcar->exit_time=1020;
+    testcar->lvl=1;
+
+
+    /* Create linked list that holds linked lists for entrance queues */
+    for(int i=0; i<ENTRANCES; i++){
+        node_t *queue = (node_t *)malloc(sizeof(node_t));
+        eqlist_head = qnode_add(eqlist_head, queue);
+        eqlist_head->entrID = i;
     }
+    
+    // start here
+    node_add(eqlist_head->queue, testcar);
 
-
+    
     
 
     pthread_create(&time_th, NULL, thf_time, NULL);
     pthread_create(&test_th, NULL, thf_test, NULL);
-    pthread_create(&creator_th, NULL, thf_creator, &entr_qlist);
+    pthread_create(&creator_th, NULL, thf_creator, NULL);
 
 
 
