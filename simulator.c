@@ -42,8 +42,7 @@ struct node {
     node_t *next;
 };
 
-node_t *node_add(node_t *head, car_t *car)
-{
+node_t *node_add(node_t *head, car_t *car){
     /* create new node to add to list */
     node_t *new = (node_t *)malloc(sizeof(node_t));
     if (new == NULL)
@@ -53,14 +52,13 @@ node_t *node_add(node_t *head, car_t *car)
         return NULL;
     }
 
-    // insert new node
     new->car = car;
     new->next = head;
+
     return new;
 }
 
-node_t *node_find_LP(node_t *head, char *plate)
-{
+node_t *node_find_LP(node_t *head, char *plate){
     for (; head != NULL; head = head->next)
     {
         if (strcmp(plate, head->car->plate) == 0)
@@ -71,11 +69,10 @@ node_t *node_find_LP(node_t *head, char *plate)
     return NULL;
 }
 
-void node_print(node_t *head)
-{
+void node_print(node_t *head){
     for (; head != NULL; head = head->next)
     {
-        printf("%s", head->car->plate);
+        printf("%s\n", head->car->plate);
         fflush(stdout);
     }
 }
@@ -246,15 +243,17 @@ node_t *read_file(char *file, node_t *head) {
     char str[PLATE_LENGTH+1];
     while(fgets(str, PLATE_LENGTH+1, text)) {
         if(!(i%2)){
-        car_t *newcar = (car_t *)malloc(sizeof(car_t));;
-        newcar->plate = str;
-        head = node_add(head, newcar);
+            car_t *newcar = (car_t *)malloc(sizeof(car_t));
+            newcar->plate = strdup(str);
+            head = node_add(head, newcar);
+            memset(str, 0, 7);
         }
+
         i++;
     }
+
     fclose(text);
     return head;
-
 }
 
 /*************************** THREAD FUNCTIONS ******************************/
@@ -385,6 +384,7 @@ int main(void){
         cv_init(&entr_qlist[i]);
     }
 
+/*
     node_t *acc_cars_head = (node_t *)malloc(sizeof(node_t));
     if(acc_cars_head == NULL){
         printf("Memory allocation failure");
@@ -392,20 +392,27 @@ int main(void){
     }
 
     // this is the problem
-    acc_cars_head->car->plate = "okay";
+    //acc_cars_head->car->plate = (char *)"okay\n";
 
     //acc_cars_head = read_file("plates.txt", acc_cars_head);
 
 
-    printf("%s", acc_cars_head->car->plate);
+    printf("%ld", sizeof(node_t));
     fflush(stdout);
 
     
 
     //node_print(acc_cars_head);
+*/
+    car_t *test_car1 = (car_t *)malloc(sizeof(car_t));
+    test_car1->plate = "TEST";
 
     
-    
+    node_t *acc_cars_head = NULL;
+    acc_cars_head = node_add(acc_cars_head, test_car1);
+
+    acc_cars_head = read_file("plates.txt", acc_cars_head);
+    node_print(acc_cars_head);
     
 
     pthread_create(&time_th, NULL, thf_time, NULL);
