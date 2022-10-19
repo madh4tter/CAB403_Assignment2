@@ -14,7 +14,7 @@
 #define DV_GROWTH_FACTOR 1.25
 
 typedef struct car {
-    char plate[6];
+    char *plate;
     short lvl;
     uint16_t entr_time;
     uint16_t exit_time;

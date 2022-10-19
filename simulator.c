@@ -13,10 +13,14 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <string.h>
 
 /* Include shared memory struct definitions */
 #include "PARKING.h"
 #include "simulator.h"
+
+#define ACC_CAR_AMT 100
+#define PLATE_LENGTH 6
 
 
 /* this value can count up to 9*10^18 ms or 292 million years
@@ -26,6 +30,52 @@
    need to protect this value with a mutex?
 */
 mstimer_t runtime;
+char acc_cars[ACC_CAR_AMT][PLATE_LENGTH];
+
+
+
+/*************** LINKED LIST METHODS ********************************************/
+typedef struct node node_t;
+
+struct node {
+    car_t *car;
+    node_t *next;
+};
+
+node_t *node_add(node_t *head, car_t *car){
+    /* create new node to add to list */
+    node_t *new = (node_t *)malloc(sizeof(node_t));
+    if (new == NULL)
+    {
+        printf("Memory allocation failure");
+        fflush(stdout);
+        return NULL;
+    }
+
+    new->car = car;
+    new->next = head;
+
+    return new;
+}
+
+node_t *node_find_LP(node_t *head, char *plate){
+    for (; head != NULL; head = head->next)
+    {
+        if (strcmp(plate, head->car->plate) == 0)
+        {
+            return head;
+        }
+    }
+    return NULL;
+}
+
+void node_print(node_t *head){
+    for (; head != NULL; head = head->next)
+    {
+        printf("%s\n", head->car->plate);
+        fflush(stdout);
+    }
+}
 
 /**************** DYNAMIC VECTOR METHODS *****************************************/
 void cv_init( cv_t* vec ) {
@@ -181,6 +231,30 @@ void destroy_shared_object( shm_t* shm ) {
     shm->data = NULL;
 }
 
+/********************** MISC FUNCTIONS ********************************************/
+node_t *read_file(char *file, node_t *head) {
+    FILE* text = fopen(file, "r");
+    if(text == NULL){
+        printf("Could not open plates.txt\n");
+        fflush(stdout);
+    }
+
+    int i= 0;
+    char str[PLATE_LENGTH+1];
+    while(fgets(str, PLATE_LENGTH+1, text)) {
+        if(!(i%2)){
+            car_t *newcar = (car_t *)malloc(sizeof(car_t));
+            newcar->plate = strdup(str);
+            head = node_add(head, newcar);
+            memset(str, 0, 7);
+        }
+
+        i++;
+    }
+
+    fclose(text);
+    return head;
+}
 
 /*************************** THREAD FUNCTIONS ******************************/
 
@@ -217,6 +291,13 @@ void *thf_time(void *ptr){
 void *thf_creator(void *entr_qlist_void){
     cv_t *entr_qlist = entr_qlist_void;
 
+    /* Create linked list for accepted car number plates */
+    node_t *acc_cars_head = NULL;
+    acc_cars_head = read_file("plates.txt", acc_cars_head);
+
+    /* Create linked list for cars existing in simulation */
+    node_t *sim_cars_head = NULL;
+   
     int counter=0;
     while(counter < 5){
         counter++;
@@ -230,11 +311,21 @@ void *thf_creator(void *entr_qlist_void){
         car_t *new_car = malloc(sizeof(car_t));
 
         /* assign random number plate */
-        bool exists;
+        bool exists = false;
+        int car_loc;
+        int count = 0;
         do {
             if(rand()%2){
-                // select from approved list
-                //new_car->plate = 
+                /* select from approved list */
+                car_loc = rand() % ACC_CAR_AMT;
+                for (; acc_cars_head != NULL; acc_cars_head = acc_cars_head->next){
+                    if (count >= car_loc){
+                        new_car->plate = acc_cars_head->car->plate;
+                        break;
+                    } else {
+                        count++;
+                    }
+                }
             } else {
                 /* Generate random */
                 for (int i=0; i<3;i++){
@@ -243,28 +334,39 @@ void *thf_creator(void *entr_qlist_void){
                 }
             }
 
-            // Check every value in existing cars list to see if it matches
-            exists = false;
+            /* Check every value in existing cars list to see if it matches if it matches, regenerate a LP*/
+            node_t *head_temp = sim_cars_head;
+            for (; head_temp != NULL; head_temp = head_temp->next){
+                if(!strcmp(head_temp->car->plate, new_car->plate)){
+                    exists = true;
+                }
+            }
         } while (exists == true);
 
+        /* Add onto list of existing cars*/
+        sim_cars_head = node_add(sim_cars_head, new_car);
+
+        //node_print(sim_cars_head);
+
         /* Randomly choose an entrance queue to add to */
+        /*
         int entr_ID = rand() % ENTRANCES;
         if(entr_ID < 1){
             entr_ID = 1;
         }
         cv_t queue = entr_qlist[entr_ID];
+        */
         /* Push new car onto start of queue */
-        cv_push(&queue, *new_car);
+        //cv_push(&queue, *new_car);
 
-        printf("succesfully got here\n");
-        fflush(stdout);
     }
 
     for(int i = 0; i<5; i++){
-        printf("%s", entr_qlist[i].data->plate);
+        //printf("%s", entr_qlist[i].data->plate);
         fflush(stdout);
     }
 
+    
     return entr_qlist;
 
 }
@@ -308,7 +410,7 @@ int main(void){
     }
 
 
-
+    
 
     pthread_create(&time_th, NULL, thf_time, NULL);
     pthread_create(&test_th, NULL, thf_test, NULL);
@@ -321,7 +423,7 @@ int main(void){
 
     pthread_join(time_th, NULL);
     pthread_join(test_th, NULL);
-    
+    pthread_join(creator_th, NULL);
 
 
 
