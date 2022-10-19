@@ -13,12 +13,14 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <string.h>
 
 /* Include shared memory struct definitions */
 #include "PARKING.h"
 #include "simulator.h"
 
-#define ACC_CAR_AMT
+#define ACC_CAR_AMT 100
+#define PLATE_LENGTH 6
 
 
 /* this value can count up to 9*10^18 ms or 292 million years
@@ -28,21 +30,55 @@
    need to protect this value with a mutex?
 */
 mstimer_t runtime;
+char acc_cars[ACC_CAR_AMT][PLATE_LENGTH];
 
-/********************** MISC FUNCTIONS ********************************************/
-char *read_file(char *file) {
-    uint8_t limit = 6;
-   uint8_t car_amt = 100;
-    FILE* text = fopen(file, "r");
-    char line[limit];
-    char accepted_cars[car_amt][limit];
-    for(int i = 0; i<(car_amt); i++)
+
+
+/*************** LINKED LIST METHODS ********************************************/
+typedef struct node node_t;
+
+struct node {
+    car_t *car;
+    node_t *next;
+};
+
+node_t *node_add(node_t *head, car_t *car)
+{
+    /* create new node to add to list */
+    node_t *new = (node_t *)malloc(sizeof(node_t));
+    if (new == NULL)
     {
-        accepted_cars[i] = fgets(line, sizeof(line), text);
-    } 
-   return accepted_cars;
+        printf("Memory allocation failure");
+        fflush(stdout);
+        return NULL;
+    }
+
+    // insert new node
+    new->car = car;
+    new->next = head;
+    return new;
 }
 
+node_t *node_find_LP(node_t *head, char *plate)
+{
+    for (; head != NULL; head = head->next)
+    {
+        if (strcmp(plate, head->car->plate) == 0)
+        {
+            return head;
+        }
+    }
+    return NULL;
+}
+
+void node_print(node_t *head)
+{
+    for (; head != NULL; head = head->next)
+    {
+        printf("%s", head->car->plate);
+        fflush(stdout);
+    }
+}
 
 /**************** DYNAMIC VECTOR METHODS *****************************************/
 void cv_init( cv_t* vec ) {
@@ -198,6 +234,28 @@ void destroy_shared_object( shm_t* shm ) {
     shm->data = NULL;
 }
 
+/********************** MISC FUNCTIONS ********************************************/
+node_t *read_file(char *file, node_t *head) {
+    FILE* text = fopen(file, "r");
+    if(text == NULL){
+        printf("Could not open plates.txt\n");
+        fflush(stdout);
+    }
+
+    int i= 0;
+    char str[PLATE_LENGTH+1];
+    while(fgets(str, PLATE_LENGTH+1, text)) {
+        if(!(i%2)){
+        car_t *newcar = (car_t *)malloc(sizeof(car_t));;
+        newcar->plate = str;
+        head = node_add(head, newcar);
+        }
+        i++;
+    }
+    fclose(text);
+    return head;
+
+}
 
 /*************************** THREAD FUNCTIONS ******************************/
 
@@ -231,10 +289,10 @@ void *thf_time(void *ptr){
     return ptr;
 }
 
-void *thf_creator(void *entr_qlist_void){
+cv_t *thf_creator(void *entr_qlist_void){
     cv_t *entr_qlist = entr_qlist_void;
 
-    char *acc_cars = read_file("plates.txt");
+    //char *acc_cars = read_file("plates.txt");
    
     int counter=0;
     while(counter < 5){
@@ -275,15 +333,16 @@ void *thf_creator(void *entr_qlist_void){
         /* Push new car onto start of queue */
         cv_push(&queue, *new_car);
 
-        printf("succesfully got here\n");
+        //printf("succesfully got here\n");
         fflush(stdout);
     }
 
     for(int i = 0; i<5; i++){
-        printf("%s", entr_qlist[i].data->plate);
+        //printf("%s", entr_qlist[i].data->plate);
         fflush(stdout);
     }
 
+    
     return entr_qlist;
 
 }
@@ -314,7 +373,7 @@ int main(void){
 
     pthread_t time_th;
     pthread_t test_th;
-    pthread_t creator_th;
+    //pthread_t creator_th;
 
     pthread_mutex_init(&runtime.lock, NULL);
     pthread_mutex_init(&rand_lock, NULL);
@@ -326,12 +385,32 @@ int main(void){
         cv_init(&entr_qlist[i]);
     }
 
+    node_t *acc_cars_head = (node_t *)malloc(sizeof(node_t));
+    if(acc_cars_head == NULL){
+        printf("Memory allocation failure");
+        fflush(stdout);
+    }
+
+    // this is the problem
+    acc_cars_head->car->plate = "okay";
+
+    //acc_cars_head = read_file("plates.txt", acc_cars_head);
 
 
+    printf("%s", acc_cars_head->car->plate);
+    fflush(stdout);
+
+    
+
+    //node_print(acc_cars_head);
+
+    
+    
+    
 
     pthread_create(&time_th, NULL, thf_time, NULL);
     pthread_create(&test_th, NULL, thf_test, NULL);
-    pthread_create(&creator_th, NULL, thf_creator, &entr_qlist);
+    //pthread_create(&creator_th, NULL, thf_creator, &entr_qlist);
 
 
 
@@ -340,7 +419,7 @@ int main(void){
 
     pthread_join(time_th, NULL);
     pthread_join(test_th, NULL);
-    
+    //pthread_join(creator_th, NULL);
 
 
 
