@@ -38,6 +38,8 @@ typedef struct car_vec {
 	car_t* data;
 } cv_t;
 
+typedef struct queue_node qnode_t;
+
 /* Methods for managing shared memory */
 
 // Create object with PARKING data, set mutexes and conds as shared
