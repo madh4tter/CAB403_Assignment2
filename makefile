@@ -12,4 +12,7 @@ firealarm.o: firealarm.c firealarm.h PARKING.h
 mimicPark: firealarm.o manager.o simulator.o
 
 clean: 
-	rm -f *.0
+	rm -f mimicPark
+	rm -f *.o
+
+.PHONY: all clean
