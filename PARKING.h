@@ -25,6 +25,7 @@
 #include <sys/wait.h>
 #include <string.h>
 
+
 #define SHARE_NAME "PARKING"
 
 /* Define characteristics of car-park */

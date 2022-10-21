@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "stdio.h": "c",
+        "semaphore.h": "c",
+        "string.h": "c",
+        "stddef.h": "c",
+        "stdlib.h": "c",
+        "stdbool.h": "c",
+        "linked_list.h": "c"
+    }
+}

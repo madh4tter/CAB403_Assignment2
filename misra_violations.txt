@@ -1,0 +1,67 @@
+[firealarm.c:1]: (style) misra violation 2106 with no text in the supplied rule-texts-file
+[firealarm.c:3]: (style) misra violation 2110 with no text in the supplied rule-texts-file
+[firealarm.c:10]: (style) misra violation 804 with no text in the supplied rule-texts-file
+[firealarm.c:11]: (style) misra violation 804 with no text in the supplied rule-texts-file
+[firealarm.c:11]: (style) misra violation 508 with no text in the supplied rule-texts-file
+[firealarm.c:13]: (style) misra violation 804 with no text in the supplied rule-texts-file
+[firealarm.c:14]: (style) misra violation 804 with no text in the supplied rule-texts-file
+[firealarm.c:14]: (style) misra violation 807 with no text in the supplied rule-texts-file
+[firealarm.c:15]: (style) misra violation 804 with no text in the supplied rule-texts-file
+[firealarm.c:15]: (style) misra violation 807 with no text in the supplied rule-texts-file
+[firealarm.c:40]: (style) misra violation 804 with no text in the supplied rule-texts-file
+[firealarm.c:42]: (style) misra violation 1404 with no text in the supplied rule-texts-file
+[firealarm.c:43]: (style) misra violation 1702 with no text in the supplied rule-texts-file
+[firealarm.c:46]: (style) R21.3 text.
+[firealarm.c:47]: (style) R15.5 text.
+[firealarm.c:51]: (style) misra violation 804 with no text in the supplied rule-texts-file
+[firealarm.c:51]: (style) misra violation 807 with no text in the supplied rule-texts-file
+[firealarm.c:53]: (style) R11.5 text.
+[firealarm.c:56]: (style) misra violation 804 with no text in the supplied rule-texts-file
+[firealarm.c:58]: (style) misra violation 1203 with no text in the supplied rule-texts-file
+[firealarm.c:59]: (style) misra violation 1203 with no text in the supplied rule-texts-file
+[firealarm.c:63]: (style) misra violation 701 with no text in the supplied rule-texts-file
+[firealarm.c:63]: (style) misra violation 1201 with no text in the supplied rule-texts-file
+[firealarm.c:64]: (style) R11.5 text.
+[firealarm.c:64]: (style) misra violation 1804 with no text in the supplied rule-texts-file
+[firealarm.c:67]: (style) R11.5 text.
+[firealarm.c:67]: (style) R21.3 text.
+[firealarm.c:73]: (style) R17.7 text.
+[firealarm.c:82]: (style) R10.4 text.
+[firealarm.c:82]: (style) R11.5 text.
+[firealarm.c:82]: (style) R21.3 text.
+[firealarm.c:85]: (style) misra violation 1303 with no text in the supplied rule-texts-file
+[firealarm.c:87]: (style) misra violation 2109 with no text in the supplied rule-texts-file
+[firealarm.c:91]: (style) R11.5 text.
+[firealarm.c:91]: (style) R21.3 text.
+[firealarm.c:97]: (style) R17.7 text.
+[firealarm.c:105]: (style) R15.6 text.
+[firealarm.c:114]: (style) misra violation 1201 with no text in the supplied rule-texts-file
+[firealarm.c:114]: (style) R15.6 text.
+[firealarm.c:120]: (style) misra violation 1201 with no text in the supplied rule-texts-file
+[firealarm.c:120]: (style) R15.6 text.
+[firealarm.c:130]: (style) misra violation 804 with no text in the supplied rule-texts-file
+[firealarm.c:132]: (style) R11.5 text.
+[firealarm.c:147]: (style) misra violation 802 with no text in the supplied rule-texts-file
+[firealarm.c:147]: (style) misra violation 806 with no text in the supplied rule-texts-file
+[firealarm.c:152]: (style) R10.4 text.
+[firealarm.c:152]: (style) R21.3 text.
+[firealarm.c:155]: (style) misra violation 1106 with no text in the supplied rule-texts-file
+[firealarm.c:158]: (style) misra violation 1404 with no text in the supplied rule-texts-file
+[firealarm.c:159]: (style) misra violation 1501 with no text in the supplied rule-texts-file
+[firealarm.c:165]: (style) R17.7 text.
+[firealarm.c:170]: (style) misra violation 701 with no text in the supplied rule-texts-file
+[firealarm.c:170]: (style) misra violation 1201 with no text in the supplied rule-texts-file
+[firealarm.c:171]: (style) R11.5 text.
+[firealarm.c:171]: (style) misra violation 1804 with no text in the supplied rule-texts-file
+[firealarm.c:176]: (style) R10.4 text.
+[firealarm.c:176]: (style) R21.3 text.
+[firealarm.c:178]: (style) misra violation 1201 with no text in the supplied rule-texts-file
+[firealarm.c:179]: (style) R11.5 text.
+[firealarm.c:179]: (style) misra violation 1804 with no text in the supplied rule-texts-file
+[firealarm.c:183]: (style) misra violation 1201 with no text in the supplied rule-texts-file
+[firealarm.c:184]: (style) R11.5 text.
+[firealarm.c:184]: (style) misra violation 1804 with no text in the supplied rule-texts-file
+[firealarm.c:190]: (style) misra violation 704 with no text in the supplied rule-texts-file
+[firealarm.c:193]: (style) misra violation 1201 with no text in the supplied rule-texts-file
+[firealarm.c:194]: (style) R11.5 text.
+[firealarm.c:194]: (style) misra violation 1804 with no text in the supplied rule-texts-file
