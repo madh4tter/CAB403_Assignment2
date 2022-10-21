@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS= -lrt -lpthread
+CFLAGS= -lrt -lpthread -Wall -Wextra
 
 all: mimicPark
 	echo "Done"
