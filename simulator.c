@@ -23,6 +23,10 @@ pthread_cond_t eq_cond;
 node_t *inside_list;
 pthread_mutex_t inlist_lock;
 
+bool ROR_fire = false;
+bool FT_fire = false;
+bool finish = false;
+
 /* Create linked list for cars existing in simulation */
 node_t *sim_cars_head = NULL;
 pthread_mutex_t sim_cars_lock;
@@ -263,6 +267,129 @@ void trig_LPR(LPR_t *LPR, car_t *car){
     pthread_cond_signal(&LPR->cond);
 
 }
+
+/***************************** FIRE ALARM TEMPS *****************************************/
+
+void temp_start(shm_t *shm)
+{
+    int start_temp = 25;
+    int base_temp = 10;
+
+    for (int i = 0; i < LEVELS; i++)
+    {
+        shm->data->levels[i].temp = (rand() % start_temp) + base_temp;
+    }
+}
+
+void temp_control(shm_t *shm)
+{
+    int change[3] = {-1, 0, 1};
+
+    // At the start
+    if(shm->data->levels[0].temp == 0)
+    {
+        printf("Temp start did not work");
+    }
+    // While running
+    else
+    {
+        int random_index = rand() % 3;
+        int random_change = change[random_index];
+        for (int i = 0; i < LEVELS; i++)
+        {
+            if(shm->data->levels[i].temp < 11)
+            {
+                shm->data->levels[i].temp += change[2];
+            }
+            else if(shm->data->levels[i].temp > 39)
+            {
+                shm->data->levels[i].temp += change[0];
+            }
+            else
+            {
+                shm->data->levels[i].temp += random_change; 
+            }
+        }
+    }
+}
+
+void rate_of_rise(shm_t *shm)
+{
+    int change = 1;
+    int choose = rand() % LEVELS;
+    
+    for(int i = 0; i < LEVELS; i++)
+    {
+        if (choose == i)
+        {
+            shm->data->levels[i].temp += change; 
+        }
+    }
+}
+
+void fixed_temp(shm_t *shm)
+{
+    int large_temp = 100;
+    int choose = rand() % LEVELS;
+    
+    for(int i = 0; i < LEVELS; i++)
+    {
+        if (choose == i)
+        {
+            shm->data->levels[i].temp = large_temp; 
+        }
+    }
+}
+
+void temp_update(shm_t *shm)
+{
+    temp_start(shm);
+    
+    while(1)
+    {
+        if (ROR_fire)
+        {
+            rate_of_rise(shm);
+            usleep(10);
+        }
+        else if (FT_fire)
+        {
+            fixed_temp(shm);
+            usleep(10);
+        }
+        else
+        {
+            temp_control(shm);
+            usleep(10);
+        }
+    }
+}
+
+void check_fire_start(void)
+{
+    char input;
+    while(finish == false)
+    {
+        input = getchar();
+
+        switch (input)
+        {
+            case 'r':
+                    ROR_fire = true;
+                    printf("rateofrise\n");
+                    break;
+            case 'f':
+                    FT_fire = true;
+                    printf("fixedtempture\n");
+                    break;
+            case 'd':
+                    finish = true;
+                    printf("You have finished the program\n");
+                    break;
+        }
+    }
+}
+
 
 /********************** MISC FUNCTIONS ********************************************/
 node_t *read_file(char *file, node_t *head) {
