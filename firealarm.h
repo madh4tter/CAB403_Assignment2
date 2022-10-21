@@ -1,7 +1,6 @@
 #include <pthread.h>
 
 int shm_fd = 0;
-void *shm;
 
 int *alarm_active = 0;
 pthread_mutex_t alarm_mutex = PTHREAD_MUTEX_INITIALIZER;

@@ -121,8 +121,10 @@ void *openboomgate(void *arg) // !!NASA Power of 10: #9 (Function pointers are n
 
 void emergency_mode(void)
 {
-	shm_t *shm;
-	get_shared_object(shm, SHARE_NAME);
+	shm_t shm;
+	while (get_shared_object(&shm, SHARE_NAME) == 0){
+		usleep(10);
+	};
 	// char key = NULL;
 	fprintf(stderr, "*** ALARM ACTIVE ***\n");
 	
@@ -130,7 +132,7 @@ void emergency_mode(void)
 	// Activate alarms on all levels
 	for (int i = 0; i < LEVELS; i++) {
 		int addr = 104 * i + 2498; // Octal use not allowed, changed to integer scalar
-		char *alarm_trigger = (char *)shm + addr;
+		char *alarm_trigger = (char *)&shm + addr;
 		*alarm_trigger = 1;
 	}
 	
@@ -138,12 +140,12 @@ void emergency_mode(void)
 	pthread_t *boomgatethreads = malloc(sizeof(pthread_t) * (ENTRANCES + EXITS));
 	for (int i = 0; i < ENTRANCES; i++) {
 		int addr = 288 * i + 96;
-		struct boomgate *bg = shm + addr;
+		struct boomgate *bg = (void*)&shm + addr;
 		pthread_create(boomgatethreads + i, NULL, openboomgate, &bg);
 	}
 	for (int i = 0; i < EXITS; i++) {
 		int addr = 192 * i + 1536;
-		struct boomgate *bg = shm + addr;
+		struct boomgate *bg = (void*)&shm + addr;
 		pthread_create(boomgatethreads + ENTRANCES + i, NULL, openboomgate, &bg);
 	}
 	
@@ -154,7 +156,7 @@ void emergency_mode(void)
 		for (char *p = evacmessage; *p != '\0'; p++) {
 			for (int i = 0; i < ENTRANCES; i++) {
 				int addr = 288 * i + 192;
-				struct parkingsign *sign = shm + addr;
+				struct parkingsign *sign = (void*)&shm + addr;
 				pthread_mutex_lock(&sign->m);
 				sign->display = *p;
 				pthread_cond_broadcast(&sign->c);
@@ -174,9 +176,10 @@ void emergency_mode(void)
 
 int main(void) // Must have input declarations -- added 'void' input.
 {
-	shm_t *shm;
-	get_shared_object(shm, SHARE_NAME);
-
+	shm_t shm;
+	while (get_shared_object(&shm, SHARE_NAME) == 0){
+		usleep(10);
+	};
 	shm_fd = shm_open("PARKING", O_RDWR, 0);
 	
 	fthreads = malloc(sizeof(pthread_t) * LEVELS);
