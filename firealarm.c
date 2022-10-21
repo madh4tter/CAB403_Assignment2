@@ -81,24 +81,21 @@ void tempmonitor(int level)
 			if (count == TEMPCHANGE_WINDOW) {
 				// If 90% of the last 30 temperatures are >= 58 degrees,
 				// this is considered a high temperature. Raise the alarm
-				if (hightemps >= TEMPCHANGE_WINDOW * 0.9)
-					pthread_mutex_lock(&alarm_active);
+				if (hightemps >= TEMPCHANGE_WINDOW * 0.9){
 					pthread_cond_broadcast(&alarm_condvar);
-					pthread_mutex_unlock(&alarm_active);
-
+				}
 				
 				// If the newest temp is >= 8 degrees higher than the oldest
 				// temp (out of the last 30), this is a high rate-of-rise.
 				// Raise the alarm
 				if (templist->temperature - oldesttemp->temperature >= 8){
-					pthread_mutex_lock(&alarm_active);
 					pthread_cond_broadcast(&alarm_condvar);
-					pthread_mutex_unlock(&alarm_active);			
 				}
 			}
 		
 		usleep(2000);
 		pthread_mutex_lock(&alarm_mutex);
+		}
 	}
 }
 
@@ -133,13 +130,13 @@ void emergency_mode(void)
 	pthread_t *boomgatethreads = malloc(sizeof(pthread_t) * (ENTRANCES + EXITS));
 	for (int i = 0; i < ENTRANCES; i++) {
 		int addr = 288 * i + 96;
-		volatile struct boomgate *bg = shm + addr;
-		pthread_create(boomgatethreads + i, NULL, openboomgate, bg);
+		struct boomgate *bg = shm + addr;
+		pthread_create(boomgatethreads + i, NULL, openboomgate, &bg);
 	}
 	for (int i = 0; i < EXITS; i++) {
 		int addr = 192 * i + 1536;
-		volatile struct boomgate *bg = shm + addr;
-		pthread_create(boomgatethreads + ENTRANCES + i, NULL, openboomgate, bg);
+		struct boomgate *bg = shm + addr;
+		pthread_create(boomgatethreads + ENTRANCES + i, NULL, openboomgate, &bg);
 	}
 	
 	// Show evacuation message on an endless loop
@@ -149,7 +146,7 @@ void emergency_mode(void)
 		for (char *p = evacmessage; *p != '\0'; p++) {
 			for (int i = 0; i < ENTRANCES; i++) {
 				int addr = 288 * i + 192;
-				volatile struct parkingsign *sign = shm + addr;
+				struct parkingsign *sign = shm + addr;
 				pthread_mutex_lock(&sign->m);
 				sign->display = *p;
 				pthread_cond_broadcast(&sign->c);
@@ -159,7 +156,7 @@ void emergency_mode(void)
 			// key = getchar(); // Old idea, would reset once the 'q' key is pressed. Updated to only reset when alarm_active is reset. This can be handled by a controller program. 
 		}
 		pthread_mutex_lock(&alarm_mutex);
-	} while(alarm_active == 1)
+	} while(*alarm_active == 1);
 	
 	for (int i = 0; i < LEVELS; i++) {
 		pthread_join(threads[i], NULL);
@@ -173,12 +170,12 @@ void emergency_mode(void)
 int main(void) // Must have input declarations -- added 'void' input.
 {
 	shm_fd = shm_open("PARKING", O_RDWR, 0);
-	shm = (volatile void *) mmap(0, 2920, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+	shm = (void *) mmap(0, 2920, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
 	
-	pthread_t *threads = malloc(sizeof(pthread_t) * LEVELS);
+	threads = malloc(sizeof(pthread_t) * LEVELS);
 	
-	for (int i = 0; i < LEVELS; i++) {
-		pthread_create(threads + i, NULL, (void *(*)(void *)) tempmonitor, (void *)i);
+	for (int* i = 0; *i < LEVELS; *i++) {
+		pthread_create(threads + *i, NULL, (void *(*)(void *)) tempmonitor, (int *)i);
 	}
 
 	// while(alarm_active == 0){ // This will block the pthread alarm mutex, need better soln; This unlocks, waits for 1sec, then locks and checks alarm variable
@@ -186,11 +183,12 @@ int main(void) // Must have input declarations -- added 'void' input.
 	// 	usleep(1000);
 	// 	pthread_mutex_lock(&alarm_mutex);
 	// }
-	pthread_mutex_lock(&alarm_active);
+	pthread_mutex_lock(&alarm_mutex);
 	while(alarm_active == 0){
 		pthread_cond_wait(&alarm_condvar, &alarm_mutex);
 	}
-	pthread_mutex_unlock(&alarm_active);
+	*alarm_active = 1;
+	pthread_mutex_unlock(&alarm_mutex);
 
 	emergency_mode();
 
