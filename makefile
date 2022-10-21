@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS= -l -pthread
+CFLAGS= -lrt -lpthread
 
 all: mimicPark
 	echo "Done"
