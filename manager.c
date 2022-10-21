@@ -118,7 +118,7 @@ char level_assign(int car_count[LEVELS])
         }
     }
 
-    min++; // As 0 represents level 1;
+    //min++; // As 0 represents level 1;
     char level_char = min + '0'; // Convert to char
 
     return level_char;
@@ -388,7 +388,7 @@ void tempture_start(shm_t *shm)
 
     for (int i = 0; i < LEVELS; i++)
     {
-        shm->data.levels[i].temp = (rand() % start_temp) + base_temp;
+        shm->data->levels[i].temp = (rand() % start_temp) + base_temp;
     }
 }
 
@@ -400,7 +400,7 @@ void tempture_controller(shm_t *shm)
     //srand(time(NULL));
 
     // At the start
-    if(shm->data.levels[0].temp == 0)
+    if(shm->data->levels[0].temp == 0)
     {
         printf("Temp start did not work");
     }
@@ -411,17 +411,17 @@ void tempture_controller(shm_t *shm)
         int random_change = change[random_index];
         for (int i = 0; i < LEVELS; i++)
         {
-            if(shm->data.levels[i].temp < 11)
+            if(shm->data->levels[i].temp < 11)
             {
-                shm->data.levels[i].temp += change[2];
+                shm->data->levels[i].temp += change[2];
             }
-            else if(shm->data.levels[i].temp > 39)
+            else if(shm->data->levels[i].temp > 39)
             {
-                shm->data.levels[i].temp += change[0];
+                shm->data->levels[i].temp += change[0];
             }
             else
             {
-                shm->data.levels[i].temp += random_change; 
+                shm->data->levels[i].temp += random_change; 
             }
         }
     }
@@ -436,7 +436,7 @@ void rate_of_rise(shm_t *shm)
     {
         if (choose == i)
         {
-            shm->data.levels[i].temp += change; 
+            shm->data->levels[i].temp += change; 
         }
     }
 }
@@ -450,7 +450,7 @@ void fixed_tempture(shm_t *shm)
     {
         if (choose == i)
         {
-            shm->data.levels[i].temp = large_temp; 
+            shm->data->levels[i].temp = large_temp; 
         }
     }
 }
@@ -537,14 +537,14 @@ int main(void)
     for (int i = 0; i < ENTRANCES; i++)
     {
         // The enterances for the cars
-        error = pthread_create(&enter_thread[i], NULL, (void*)enterance_operation, &shm.data.entrances[i]);
+        error = pthread_create(&enter_thread[i], NULL, (void*)enterance_operation, &shm.data->entrances[i]);
         if (error != 0)
         {
             printf("Error creating thread: %d\n", i);
         }
 
         // The boomgates for each enterance
-        error = pthread_create(&boom_gates_enter[i], NULL, (void*)boomgate_good, &shm.data.entrances[i]);
+        error = pthread_create(&boom_gates_enter[i], NULL, (void*)boomgate_good, &shm.data->entrances[i]);
         if (error != 0)
         {
             printf("Error creating boomgate: %d\n", i);
@@ -555,7 +555,7 @@ int main(void)
     {
         level_tracker_t new_level;
         new_level.floor = i;
-        new_level.level = &shm.data.levels[i];
+        new_level.level = &shm.data->levels[i];
 
         error = pthread_create(&level_thread[i], NULL, (void*)level_lpr, &new_level);
         if (error != 0)
@@ -567,13 +567,13 @@ int main(void)
     for (int i = 0; i < EXITS; i++)
     {
         // The enterances for the cars
-        error = pthread_create(&exit_thread[i], NULL, (void*)lpr_exit, &shm.data.exits[i]);
+        error = pthread_create(&exit_thread[i], NULL, (void*)lpr_exit, &shm.data->exits[i]);
         if (error != 0)
         {
             printf("Error creating thread: %d\n", i);
         }
 
-        error = pthread_create(&boom_gates_exit[i], NULL, (void*)boomgate_good, &shm.data.exits[i]);
+        error = pthread_create(&boom_gates_exit[i], NULL, (void*)boomgate_good, &shm.data->exits[i]);
         if (error != 0)
         {
             printf("Error creating boomgate: %d\n", i);
