@@ -14,6 +14,8 @@
 
 #define SHARE_NAME "PARKING"
 
+#define SHARE_NAME "PARKING"
+
 /* Define characteristics of car-park */
 #define ENTRANCES 1
 #define EXITS 1

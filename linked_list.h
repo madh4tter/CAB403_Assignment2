@@ -9,7 +9,7 @@
 typedef struct vehicle
 {
     char* licence_plate; // What is the licence plate of the vehicle
-    int level; // Where level is the vehicle on
+    char* level; // Where level is the vehicle on
     time_t arrival; // When did the vehicle arrive (For billing)
 }  vehicle_t;
 
@@ -34,8 +34,9 @@ node_t *node_add(node_t *head, vehicle_t *car)
     return new;
 }
 
-node_t *node_find_level(node_t *head, const char *level)
+node_t *node_find_level(node_t *head, char *level)
 {
+
     for (; head != NULL; head = head->next)
     {
         if (strcmp(level, head->vehicle->level) == 0)
@@ -47,7 +48,7 @@ node_t *node_find_level(node_t *head, const char *level)
     return NULL;
 }
 
-node_t *node_find_lp(node_t *head, char *lp)
+node_t *node_find_lp(node_t *head, const char *lp)
 {
     for (; head != NULL; head = head->next)
     {
@@ -78,10 +79,12 @@ node_t *node_delete(node_t *head, char *lp)
                 previous->next = current->next;
             }
             free(current);
-            return(head);
+            return head;
         }
 
         previous = current;
         current = current->next;
     }
+
+    return head;
 }
