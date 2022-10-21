@@ -276,6 +276,7 @@ void trig_LPR(LPR_t *LPR, car_t *car){
     pthread_cond_signal(&LPR->cond);
 
 }
+
 /********************** MISC FUNCTIONS ********************************************/
 node_t *read_file(char *file, node_t *head) {
     FILE* text = fopen(file, "r");
@@ -308,18 +309,18 @@ void destroy_car(car_t *car){
 }
 
 char sim_gates(gate_t *gate){
-   while(gate.status == 'O' || gate.status == 'C'){
-      pthread_cond_wait(gate.cond, gate.lock);
+   while(gate->status == 'O' || gate->status == 'C'){
+      pthread_cond_wait(&gate->cond, &gate->lock);
    }
-   if(gate.status == 'L'){
+   if(gate->status == 'L'){
       usleep(10000);
-      gate.status = 'C';
+      gate->status = 'C';
    } else {
       usleep(10000);
-      gate.status = 'O';
+      gate->status = 'O';
    }
-   char ret_val = gate.status;
-   pthread_mutex_unlock(gate.lock)
+   char ret_val = gate->status;
+   pthread_mutex_unlock(&gate->lock);
    return ret_val;
 }
 /*************************** THREAD FUNCTIONS ******************************/
@@ -474,6 +475,7 @@ void *thf_entr(void *data){
     /* Acquire the entrance simulated hardware */ 
     shm_t *shm_ptr = &shm;
     entrance_t *entrance = &shm_ptr->data->entrances[entranceID];
+    level_t *level;
 
     /* Unlock the mutex */
     pthread_mutex_unlock(&eq_lock);
@@ -509,32 +511,34 @@ void *thf_entr(void *data){
         /* Watch Info Screen for assigned level */
         pthread_cond_wait(&entrance->screen.cond, &entrance->screen.lock);
         short assigned_lvl = (short) entrance->screen.display;
-        if(!(assigned_lvl <= '0' && assigned_lvl >= ('0' + ENTRANCES-1)){
+        if(!(assigned_lvl >= '0' && assigned_lvl <= ('0' + ENTRANCES-1))){
             /* Remove car from simulation */
             destroy_car(popped_car);
         } else {
             popped_car->lvl = assigned_lvl;
-        }
-        
-        /* Raise boom gate */
-        // Forever loop? what to do about this?
-        while( sim_gates(&entrance->gate) != 'O'){}
+            level = &shm_ptr->data->levels[assigned_lvl];
         
         
-        /* Assign leaving time to car */
-        pthread_cond_wait(&runtime.cond);
-        popped_car->exit_time = runtime.elapsed + (rand() % 9900) + 100;
-        pthread_mutex_unlock(&runtime.cond);
+            /* Raise boom gate */
+            while( sim_gates(&entrance->gate) != 'O'){}
         
-        /* Wait for car to drive to spot */
-        usleep(10000);
         
-        /* Signal Level LPR */
-        //&entrance->LPR
+            /* Assign leaving time to car */
+            pthread_cond_wait(&runtime.cond, &runtime.lock);
+            popped_car->exit_time = runtime.elapsed + (rand() % 9900) + 100;
+            pthread_mutex_unlock(&runtime.cond);
+        
+            /* Wait for car to drive to spot */
+            usleep(10000);
+        
+            /* Signal Level LPR */
+            //pthread_mutex_lock(&level->LPR->)
 
-        /* Close boom gate */
-        // Forever loop? what to do about this?
-        while( sim_gates(&entrance->gate) != 'C'){}
+            /* Close boom gate */
+            // Forever loop? what to do about this?
+            while( sim_gates(&entrance->gate) != 'C');
+
+        }
 
     }
 
