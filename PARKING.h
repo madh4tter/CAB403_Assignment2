@@ -8,6 +8,9 @@
 
 #pragma once
 #include <semaphore.h>
+#include <stdbool.h>
+#include <inttypes.h>
+
 
 #define SHARE_NAME "PARKING"
 
