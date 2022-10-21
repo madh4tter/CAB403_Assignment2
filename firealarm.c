@@ -29,15 +29,17 @@ void tempmonitor(int level)
 	int mediantemp = 0;
 	int hightemps = 0;
 
-	shm_t *shm;
-	get_shared_object(shm, SHARE_NAME);
+	shm_t shm;
+	while (get_shared_object(&shm, SHARE_NAME) == 0){
+		usleep(10);
+	};
 	
 	while(alarm_active == 0){ // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- Fixed by changing it to only monitoring while the alarm is not active. Once the alarm is active, the system goes into 'alarm mode'. 
 																					// This can only be changed by resetting the whole system.
 		pthread_mutex_unlock(&alarm_mutex);
 		// Calculate address of temperature sensor
 		addr = 104 * level + 2496; // Changed octal to integer...
-		temp = *((int16_t *)(shm + addr));
+		temp = (int)(uintptr_t)&shm + addr;
 		
 		// Add temperature to beginning of linked list
 		newtemp = malloc(sizeof(struct tempnode));
@@ -116,7 +118,8 @@ void *openboomgate(void *arg) // !!NASA Power of 10: #9 (Function pointers are n
 		}
 		pthread_cond_wait(&bg->c, &bg->m);
 	} 
-	pthread_mutex_unlock(&bg->m); 
+	pthread_mutex_unlock(&bg->m);
+	return arg; 
 }
 
 void emergency_mode(void)
@@ -184,8 +187,8 @@ int main(void) // Must have input declarations -- added 'void' input.
 	
 	fthreads = malloc(sizeof(pthread_t) * LEVELS);
 	
-	for (int* i = 0; *i < LEVELS; *i++) {
-		pthread_create(fthreads + *i, NULL, (void *(*)(void *)) tempmonitor, (int *)i);
+	for (int i = 0; i < LEVELS; i++) {
+		pthread_create(fthreads + i, NULL, (void *) tempmonitor, (int *)(uintptr_t)i);
 	}
 
 	// while(alarm_active == 0){ // This will block the pthread alarm mutex, need better soln; This unlocks, waits for 1sec, then locks and checks alarm variable
