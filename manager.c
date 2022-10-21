@@ -457,7 +457,6 @@ void fixed_tempture(shm_t *shm)
 
 void tempture_update(shm_t *shm)
 {
-    printf("temp start\n");
     tempture_start(shm);
     
     while (finish == false)
@@ -516,7 +515,7 @@ int main(void)
     int error;
 
     // Get Shared Memory
-    if (get_shared_memory(&shm, "PARKING") != true)
+    if (get_shared_object(&shm, "PARKING") != true)
     {
         printf("Error creating shared memory");
     }
