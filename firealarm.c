@@ -9,6 +9,7 @@
 #include <fcntl.h>
 
 
+#include "PARKING.h"
 #include "firealarm.h"
 
 int compare(const void *first, const void *second)
@@ -27,6 +28,9 @@ void tempmonitor(int level)
 	int temp = 0;
 	int mediantemp = 0;
 	int hightemps = 0;
+
+	shm_t *shm;
+	get_shared_object(shm, SHARE_NAME);
 	
 	while(alarm_active == 0){ // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- Fixed by changing it to only monitoring while the alarm is not active. Once the alarm is active, the system goes into 'alarm mode'. 
 																					// This can only be changed by resetting the whole system.
@@ -117,6 +121,8 @@ void *openboomgate(void *arg) // !!NASA Power of 10: #9 (Function pointers are n
 
 void emergency_mode(void)
 {
+	shm_t *shm;
+	get_shared_object(shm, SHARE_NAME);
 	// char key = NULL;
 	fprintf(stderr, "*** ALARM ACTIVE ***\n");
 	
@@ -161,23 +167,22 @@ void emergency_mode(void)
 	} while(*alarm_active == 1);
 	
 	for (int i = 0; i < LEVELS; i++) {
-		pthread_join(threads[i], NULL);
+		pthread_join(fthreads[i], NULL);
 	}
-	
-	munmap((void *)shm, 2920);
-	close(shm_fd);
 }
 
 
 int main(void) // Must have input declarations -- added 'void' input.
 {
+	shm_t *shm;
+	get_shared_object(shm, SHARE_NAME);
+
 	shm_fd = shm_open("PARKING", O_RDWR, 0);
-	shm = (void *) mmap(0, 2920, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
 	
-	threads = malloc(sizeof(pthread_t) * LEVELS);
+	fthreads = malloc(sizeof(pthread_t) * LEVELS);
 	
 	for (int* i = 0; *i < LEVELS; *i++) {
-		pthread_create(threads + *i, NULL, (void *(*)(void *)) tempmonitor, (int *)i);
+		pthread_create(fthreads + *i, NULL, (void *(*)(void *)) tempmonitor, (int *)i);
 	}
 
 	// while(alarm_active == 0){ // This will block the pthread alarm mutex, need better soln; This unlocks, waits for 1sec, then locks and checks alarm variable
