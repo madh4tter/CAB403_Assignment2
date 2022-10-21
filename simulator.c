@@ -1,19 +1,4 @@
-/* Include necessary standard libraries */
-#include <stdlib.h>
-#include <stdio.h>
-#include <semaphore.h>
-#include <sys/time.h>
-#include <unistd.h>
-#include <math.h>
-#include <inttypes.h>
-#include <pthread.h>
-#include <fcntl.h>
-#include <stdbool.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <string.h>
+
 
 /* Include shared memory struct definitions */
 #include "PARKING.h"
@@ -34,6 +19,9 @@ mstimer_t runtime;
 qnode_t *eqlist_head;
 pthread_mutex_t eq_lock;
 pthread_cond_t eq_cond;
+
+node_t *inside_list;
+pthread_mutex_t inlist_lock;
 
 /* Create linked list for cars existing in simulation */
 node_t *sim_cars_head = NULL;
@@ -107,13 +95,13 @@ node_t *node_find_LP(node_t *head, char *plate){
     return NULL;
 }
 
-node_t *node_delete(node_t *head, char *plate)
+node_t *node_delete(node_t *head, car_t *car)
 {
     node_t *previous = NULL;
     node_t *current = head;
     while (current != NULL)
     {
-        if (strcmp(plate, current->car->plate) == 0)
+        if (strcmp(car->plate, current->car->plate) == 0)
         {
             node_t *newhead = head;
             if (previous == NULL) // first item in list
@@ -126,8 +114,6 @@ node_t *node_delete(node_t *head, char *plate)
         previous = current;
         current = current->next;
     }
-
-    // name not found
     return head;
 }
 
@@ -205,6 +191,7 @@ void init_mutexes(shm_t* shm){
     pthread_mutex_init(&runtime.lock, NULL);
     pthread_mutex_init(&eq_lock, NULL);
     pthread_mutex_init(&sim_cars_lock, NULL);
+    pthread_mutex_init(&inlist_lock, NULL);
 }
 
 bool create_shared_object( shm_t* shm, const char* share_name ) {
@@ -304,7 +291,7 @@ node_t *read_file(char *file, node_t *head) {
 
 void destroy_car(car_t *car){
     pthread_mutex_lock(&sim_cars_lock);
-    sim_cars_head = node_delete(sim_cars_head, car->plate);
+    sim_cars_head = node_delete(sim_cars_head, car);
     pthread_mutex_unlock(&sim_cars_lock);
 }
 
@@ -322,6 +309,17 @@ char sim_gates(gate_t *gate){
    char ret_val = gate->status;
    pthread_mutex_unlock(&gate->lock);
    return ret_val;
+}
+
+car_t *comp_times(node_t *head, uint64_t elap_time){
+    for (; head != NULL; head = head->next)
+    {
+        if (head->car->exit_time >= elap_time)
+        {
+            return head->car;
+        }
+    }
+    return NULL;
 }
 /*************************** THREAD FUNCTIONS ******************************/
 
@@ -379,7 +377,6 @@ void *thf_creator(void *ptr){
         car_t *new_car = malloc(sizeof(car_t));
 
         /* Initialise other values of the car */
-        new_car->entr_time = 0;
         new_car->exit_time = 0;
         new_car->lvl = 0;
 
@@ -460,6 +457,7 @@ void *thf_entr(void *data){
         printf("Shared memory connection failed\n");
         return NULL;
     }
+    shm_t *shm_ptr = &shm;
 
     /* Lock mutex of entrance queue list */
     pthread_mutex_lock(&eq_lock);
@@ -473,7 +471,6 @@ void *thf_entr(void *data){
     }
 
     /* Acquire the entrance simulated hardware */ 
-    shm_t *shm_ptr = &shm;
     entrance_t *entrance = &shm_ptr->data->entrances[entranceID];
     level_t *level;
 
@@ -526,26 +523,67 @@ void *thf_entr(void *data){
             /* Assign leaving time to car */
             pthread_cond_wait(&runtime.cond, &runtime.lock);
             popped_car->exit_time = runtime.elapsed + (rand() % 9900) + 100;
-            pthread_mutex_unlock(&runtime.cond);
+            pthread_mutex_unlock(&runtime.lock);
         
             /* Wait for car to drive to spot */
             usleep(10000);
         
             /* Signal Level LPR */
-            //pthread_mutex_lock(&level->LPR->)
+            trig_LPR(&level->LPR, popped_car);
+
+            /* Add car to inside-car-park list */
+            pthread_mutex_lock(&inlist_lock);
+            inside_list = node_push(inside_list, popped_car);
+            pthread_mutex_unlock(&inlist_lock);
 
             /* Close boom gate */
-            // Forever loop? what to do about this?
             while( sim_gates(&entrance->gate) != 'C');
-
         }
-
+        /* Repeat with next cars in queue */
     }
-
     return NULL;
 }
 
+void *thf_inside(void *ptr){
+    shm_t shm;
+    if(!get_shared_object(&shm, SHARE_NAME)){
+        printf("Shared memory connection failed\n");
+        return NULL;
+    }
+    shm_t *shm_ptr = &shm;
 
+    uint64_t curr_time;
+    car_t *leave_car;
+    level_t *level;
+    int lvlID;
+    while(1){
+        /* Acquire the time currently */
+        pthread_mutex_lock(&runtime.lock);
+        curr_time = runtime.elapsed;
+        pthread_mutex_unlock(&runtime.lock);
+
+        /* Find if any car needs to leave */
+        pthread_mutex_lock(&inlist_lock);
+        leave_car = comp_times(inside_list, curr_time);
+
+        if(leave_car != NULL){
+            /* Remove car from inside-carpark list */
+            inside_list = node_delete(inside_list, leave_car)->next;
+            pthread_mutex_unlock(&inlist_lock);
+
+            /* Set off LPR of leaving car */
+            lvlID = leave_car->lvl - '0';
+            level = &shm_ptr->data->levels[lvlID];
+            trig_LPR(&level->LPR, leave_car);
+        } else {
+            pthread_mutex_unlock(&inlist_lock);
+        }
+        
+
+    }
+
+    return ptr;
+}
 /************************** MAIN ***********************************************/
 int main(void){
     shm_t shm;
@@ -556,6 +594,7 @@ int main(void){
 
     pthread_t time_th;
     pthread_t creator_th;
+    pthread_t inside_th;
 
     pthread_t entr_threads[ENTRANCES];
     int th_entrID[ENTRANCES];
@@ -570,24 +609,13 @@ int main(void){
 
     pthread_create(&time_th, NULL, thf_time, NULL);
     pthread_create(&creator_th, NULL, thf_creator, NULL);
+    pthread_create(&inside_th, NULL, thf_inside, NULL);
 
     for (int i = 0; i < ENTRANCES; i++)
     {
         th_entrID[i] = i;
         pthread_create(&entr_threads[i], NULL, thf_entr, (void *)&th_entrID[i]);
     }
-
-
-    sleep(4);
-    shm_t *shm_ptr = &shm;
-    entrance_t *entr = &shm_ptr->data->entrances[0];
-    pthread_mutex_lock(&entr->screen.lock);
-    entr->screen.display = '0';
-    pthread_mutex_unlock(&entr->screen.lock);
-    pthread_cond_signal(&entr->screen.cond);
-
-
-
 
     for (int i = 0; i < ENTRANCES; i++)
     {
@@ -596,6 +624,7 @@ int main(void){
     }
     pthread_join(time_th, NULL);
     pthread_join(creator_th, NULL);
+    pthread_join(inside_th, NULL);
 
 
 
