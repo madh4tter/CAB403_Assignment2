@@ -306,6 +306,22 @@ void destroy_car(car_t *car){
     sim_cars_head = node_delete(sim_cars_head, car->plate);
     pthread_mutex_unlock(&sim_cars_lock);
 }
+
+char sim_gates(gate_t *gate){
+   while(gate.status == 'O' || gate.status == 'C'){
+      pthread_cond_wait(gate.cond, gate.lock);
+   }
+   if(gate.status == 'L'){
+      usleep(10000);
+      gate.status = 'C';
+   } else {
+      usleep(10000);
+      gate.status = 'O';
+   }
+   char ret_val = gate.status;
+   pthread_mutex_unlock(gate.lock)
+   return ret_val;
+}
 /*************************** THREAD FUNCTIONS ******************************/
 
 /* Thread function to keep track of time in ms*/
@@ -483,19 +499,42 @@ void *thf_entr(void *data){
 
         /* Unlock mutex */
         pthread_mutex_unlock(&eq_lock);
+        
+        /* Wait 2ms */
+        usleep(2000);
 
         /* Trigger LPR */
         trig_LPR(&entrance->LPR, popped_car);
 
         /* Watch Info Screen for assigned level */
         pthread_cond_wait(&entrance->screen.cond, &entrance->screen.lock);
-        short assign_lvl = (short) entrance->screen.display;
-        if(!(assign_lvl >= '0' && assign_lvl<= ('0' + ENTRANCES-1)){
+        short assigned_lvl = (short) entrance->screen.display;
+        if(!(assigned_lvl <= '0' && assigned_lvl >= ('0' + ENTRANCES-1)){
             /* Remove car from simulation */
             destroy_car(popped_car);
         } else {
-            popped_car->lvl = assign_lvl;
+            popped_car->lvl = assigned_lvl;
         }
+        
+        /* Raise boom gate */
+        // Forever loop? what to do about this?
+        while( sim_gates(&entrance->gate) != 'O'){}
+        
+        
+        /* Assign leaving time to car */
+        pthread_cond_wait(&runtime.cond);
+        popped_car->exit_time = runtime.elapsed + (rand() % 9900) + 100;
+        pthread_mutex_unlock(&runtime.cond);
+        
+        /* Wait for car to drive to spot */
+        usleep(10000);
+        
+        /* Signal Level LPR */
+        //&entrance->LPR
+
+        /* Close boom gate */
+        // Forever loop? what to do about this?
+        while( sim_gates(&entrance->gate) != 'C'){}
 
     }
 
