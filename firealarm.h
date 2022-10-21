@@ -1,11 +1,13 @@
 #include <pthread.h>
 
 int shm_fd = 0;
-volatile void *shm;
+void *shm;
 
-int alarm_active = 0;
+int *alarm_active = 0;
 pthread_mutex_t alarm_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t alarm_condvar = PTHREAD_COND_INITIALIZER;
+
+pthread_t *threads;
 
 #define LEVELS 5
 #define ENTRANCES 5
