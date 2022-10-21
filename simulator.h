@@ -15,10 +15,9 @@
 
 typedef struct car {
     char *plate;
-    short lvl;
+    char lvl;
     uint16_t entr_time;
-    uint16_t exit_time;
-    
+    uint16_t exit_time; 
 } car_t;
 
 typedef struct mstimer{
@@ -38,6 +37,7 @@ typedef struct car_vec {
 	car_t* data;
 } cv_t;
 
+typedef struct node node_t;
 typedef struct queue_node qnode_t;
 
 /* Methods for managing shared memory */
@@ -49,56 +49,6 @@ void destroy_shared_object( shm_t* shm );
 
 bool get_shared_object( shm_t* shm, const char* share_name );
 
-/**
- * Generates a car with a random license plate with a 50% chance of being an approved plate
- *
- * PRE: n/a.
- *
- * POST: returns string of the license plate
- * AND car does not already exist in simulation
- * 
- */
-char *create_car(void);
-
-/**
- * Places a car onto end of queue of a random entrance
- * 
- */
-void q_entr(char *plate);
-
-/**
- * Signal the conditional variable of the LPR when a car reaches the front of a queue
- * 
- */
-void trigger_LPR(LPR_t LPR);
-
-
-/**
- * Free memory for the car and remove licence plate from list of existing
- * plates
- *
- */
-void destroy_car(car_t car);
-
-/**
- * assign whatever character is on the display to car_t->level 
- * has a small chance of assigning a random level instead (unusual behaviour)
- * if any non-expected symbols is displayed on the screen, return a failure
- */
-bool assign_lvl(char display);
-
-/**
- * thread function for keeping running time of simulation in ms
- * 
- */
-//void *thf_time(void);
-
-/**
- * function for the thread responsible for creating cars and adding them onto the end
- * of a random entrance queue
- * 
- */
-//void *thf_creator(void *ptr);
 
 /**
  * function for threads at each entrance
