@@ -7,7 +7,23 @@
  *********************************************************************/
 
 #pragma once
+
+/* Include necessary standard libraries */
+#include <stdlib.h>
+#include <stdio.h>
 #include <semaphore.h>
+#include <sys/time.h>
+#include <unistd.h>
+#include <math.h>
+#include <inttypes.h>
+#include <pthread.h>
+#include <fcntl.h>
+#include <stdbool.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <string.h>
 
 #define SHARE_NAME "PARKING"
 
