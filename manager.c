@@ -36,17 +36,13 @@ pthread_t exit_thread[EXITS];
 pthread_t level_thread[LEVELS];
 pthread_t boom_gates_enter[ENTRANCES];
 pthread_t boom_gates_exit[EXITS];
-pthread_t temp_thread;
-pthread_t user_thread;
 
 // Global Variables
 shm_t shm;
 int shm_fd;
-bool rate_of_rise_fire = false;
-bool fixed_tempture_fire = false;
-bool end = false;
-bool finish = false;
-int counter = 0;
+bool m_end = false;
+bool m_finish = false;
+int m_counter = 0;
 
 // Mutex's needed for lpr_enterence funcation
 pthread_mutex_t car_park_lock; // New Car Array Lock
@@ -134,7 +130,7 @@ void enterance_operation(entrance_t *ent)
     pthread_mutex_lock(&ent->LPR.lock);
 
     // Forever loop
-    while(end == false && rate_of_rise_fire == false && fixed_tempture_fire == false)
+    while(m_end == false)
     {
         // Consently Check for licence plate
         while(ent->LPR.plate[0] == NONE)
@@ -147,9 +143,9 @@ void enterance_operation(entrance_t *ent)
         if(search_plate(&htab, holder) == 1)//plate_check(&htab, holder) == true) // If the vehcile is allowed in and if there is a car at the gate
         {
             pthread_mutex_lock(&car_park_lock);
-            if (counter < (LEVELS * CAPACITY))
+            if (m_counter < (LEVELS * CAPACITY))
             {
-                counter++;
+                m_counter++;
                 pthread_mutex_unlock(&car_park_lock);
 
                 car_count_levels[LEVELS] = car_count_level(car_list);
@@ -202,7 +198,7 @@ void enterance_operation(entrance_t *ent)
 // Enternace boom gate (best)
 void boomgate_good(entrance_t *ent)
 {
-    while(end == false && rate_of_rise_fire == false && fixed_tempture_fire == false)
+    while(m_end == false)
     {
         // Open
         if (ent->screen.display != NONE && ent->gate.status == 'C')
@@ -241,7 +237,7 @@ void boomgate_other(entrance_t *ent)
     ent->gate.status = 'C';
 
     // While there is no alarm going off in the building
-    while(end == false && rate_of_rise_fire == false && fixed_tempture_fire == false)
+    while(m_end == false)
     {
         // While there is no car that has been given permission to enter the boomgate
         while(ent->screen.display != NONE && ent->gate.status == 'C') // Neeed to add if alarm
@@ -287,7 +283,7 @@ void level_lpr(level_tracker_t *lvl)
     char holder;
     node_t* find;
 
-    while (end == false && rate_of_rise_fire == false && fixed_tempture_fire == false)
+    while (m_end == false)
     {
         pthread_mutex_lock(&lvl->level->LPR.lock);
         pthread_cond_wait(&lvl->level->LPR.cond, &lvl->level->LPR.lock);
@@ -350,17 +346,17 @@ double total_money()
 void lpr_exit(exit_t *ext)
 {
     pthread_mutex_lock(&ext->LPR.lock);
-    while(end == false && rate_of_rise_fire == false && fixed_tempture_fire == false)
+    while(m_end == false)
     {
         while (ext->LPR.plate[0] == NONE)
         {
             pthread_cond_wait(&ext->LPR.cond, &ext->LPR.lock); // Wait until another thread
         }
 
-        if (rate_of_rise_fire == false && fixed_tempture_fire == false) 
+        if (m_end == false) 
         {
             pthread_mutex_lock(&car_park_lock);
-            counter--;
+            m_counter--;
             pthread_mutex_unlock(&car_park_lock);
 
             // Find car that is leaving
@@ -381,133 +377,6 @@ void lpr_exit(exit_t *ext)
 
 // Fire Alarm Controls//////////////////////////////////////////////////////////////
 
-void tempture_start(shm_t *shm)
-{
-    int start_temp = 25;
-    int base_temp = 10;
-
-    for (int i = 0; i < LEVELS; i++)
-    {
-        shm->data->levels[i].temp = (rand() % start_temp) + base_temp;
-    }
-}
-
-void tempture_controller(shm_t *shm)
-{
-    int change[3] = {-1, 0, 1};
-
-    // Start random
-    //srand(time(NULL));
-
-    // At the start
-    if(shm->data->levels[0].temp == 0)
-    {
-        printf("Temp start did not work");
-    }
-    // While running
-    else
-    {
-        int random_index = rand() % 3;
-        int random_change = change[random_index];
-        for (int i = 0; i < LEVELS; i++)
-        {
-            if(shm->data->levels[i].temp < 11)
-            {
-                shm->data->levels[i].temp += change[2];
-            }
-            else if(shm->data->levels[i].temp > 39)
-            {
-                shm->data->levels[i].temp += change[0];
-            }
-            else
-            {
-                shm->data->levels[i].temp += random_change; 
-            }
-        }
-    }
-}
-
-void rate_of_rise(shm_t *shm)
-{
-    int change = 1;
-    int choose = rand() % LEVELS;
-    
-    for(int i = 0; i < LEVELS; i++)
-    {
-        if (choose == i)
-        {
-            shm->data->levels[i].temp += change; 
-        }
-    }
-}
-
-void fixed_tempture(shm_t *shm)
-{
-    int large_temp = 100;
-    int choose = rand() % LEVELS;
-    
-    for(int i = 0; i < LEVELS; i++)
-    {
-        if (choose == i)
-        {
-            shm->data->levels[i].temp = large_temp; 
-        }
-    }
-}
-
-void tempture_update(shm_t *shm)
-{
-    tempture_start(shm);
-    
-    while (finish == false)
-    {
-        if (rate_of_rise_fire)
-        {
-            rate_of_rise(shm);
-            usleep(10);
-        }
-        else if (fixed_tempture_fire)
-        {
-            fixed_tempture(shm);
-            usleep(10);
-        }
-        else
-        {
-            tempture_controller(shm);
-            usleep(10);
-        }
-    }
-}
-
-void check_fire_start(void)
-{
-    char input;
-    while(finish == false)
-    {
-        input = getchar();
-
-        switch (input)
-        {
-            case 'r':
-                    rate_of_rise_fire = true;
-                    printf("rateofrise\n");
-                    break;
-            case 'f':
-                    fixed_tempture_fire = true;
-                    printf("fixedtempture\n");
-                    break;
-            case 'e':
-                    end = true;
-                    printf("end\n");
-                    break;
-            case 'd':
-                    end = true;
-                    finish = true;
-                    printf("You have finished the program\n");
-                    break;
-        }
-    }
-}
 
 // Main function
 int main(void)
@@ -578,23 +447,10 @@ int main(void)
             printf("Error creating boomgate: %d\n", i);
         }
     }
-    // Temp
-    error = pthread_create(&temp_thread, NULL, (void*)tempture_update, &shm);
-    if (error != 0)
-    {
-        printf("Error creating thread: temp_thread\n");
-    }
-    // User check
-    error = pthread_create(&user_thread, NULL, (void*)check_fire_start, &shm);
-    if (error != 0)
-    {
-        printf("Error creating thread: user_thread");
-    }
-
+    
     printf("Threads are go\n");   
 
-
-    while(finish != true)
+    while(m_finish != true)
     {
         usleep(1);
     }
@@ -620,10 +476,6 @@ int main(void)
         pthread_join(exit_thread[i], NULL);
         pthread_join(boom_gates_exit[i], NULL);
     }
-    // Temp
-    pthread_join(temp_thread, NULL);
-    // User check
-    pthread_join(user_thread, NULL);
 
     // Print revenue
     //printf("The total revenue is: %f", total_money());
