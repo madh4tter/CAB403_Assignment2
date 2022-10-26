@@ -9,13 +9,13 @@
 #define BUFFER 20
 
 /*  Get and print entrance status display  */
-void get_entry(shm_t* shm);
+void get_entry();
 
 /*  Get and print exit status display  */
-void get_exit(shm_t* shm);
+void get_exit();
 
 /*  Get and print level status display  */
-void get_level(shm_t* shm);
+void get_level();
 
 /*  Get and print total revenue  */
 void print_revenue();

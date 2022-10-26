@@ -9,8 +9,55 @@
 #include <fcntl.h>
 
 
-#include "PARKING.h"
 #include "firealarm.h"
+#include "PARKING.h"
+#include "shm_methods.h"
+
+
+
+/* I've put your firealarm.h stuff in here because the compiling doesn't seem to work
+otherwise. You can put this in a new .h file if you want, 
+just needs to be under a different name */
+int shm_fd = 0;
+
+
+int *alarm_active = 0;
+pthread_mutex_t alarm_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t alarm_condvar = PTHREAD_COND_INITIALIZER;
+
+pthread_t *fthreads;
+
+#define MEDIAN_WINDOW 5
+#define TEMPCHANGE_WINDOW 30
+
+struct boomgate {
+	pthread_mutex_t m;
+	pthread_cond_t c;
+	char s;
+};
+
+struct parkingsign {
+	pthread_mutex_t m;
+	pthread_cond_t c;
+	char display;
+};
+
+struct tempnode {
+	int temperature;
+	struct tempnode *next;
+};
+
+struct tempnode *deletenodes(struct tempnode *templist, int after) // !!NASA Power of 10: #9 (Function pointers are not allowed)
+{
+	if (templist->next) {
+		templist->next = deletenodes(templist->next, after - 1);
+	}
+	if (after <= 0) {
+		free(templist);
+		return NULL;
+	}
+	return templist;
+}
 
 int compare(const void *first, const void *second)
 {
@@ -34,33 +81,29 @@ void tempmonitor(int level)
 		usleep(10);
 	};
 	
-	while(alarm_active == 0){ 
-		/*!!NASA Power of 10: #2 (loops have fixed bounds)!! -- Fixed by changing it to only monitoring while the alarm is not active. Once the alarm is active, the system goes into 'alarm mode'. 
-																					This can only be changed by resetting the whole system.*/
+	while(alarm_active == 0){ // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- Fixed by changing it to only monitoring while the alarm is not active. Once the alarm is active, the system goes into 'alarm mode'. 
+																					// This can only be changed by resetting the whole system.
 		pthread_mutex_unlock(&alarm_mutex);
-		/*Calculate address of temperature sensor*/
-		addr = 104 * level + 2496; 
-		/* Changed octal to integer...*/
-		int shm_addr = (int)(uintptr_t)&shm;
-		temp = shm_addr + addr;
+		// Calculate address of temperature sensor
+		addr = 104 * level + 2496; // Changed octal to integer...
+		temp = (int)(uintptr_t)&shm + addr;
 		
-		/* Add temperature to beginning of linked list*/
+		// Add temperature to beginning of linked list
 		newtemp = malloc(sizeof(struct tempnode));
 		newtemp->temperature = temp;
 		newtemp->next = templist;
 		templist = newtemp;
 		
-		/*Delete nodes after 5th*/
+		// Delete nodes after 5th
 		deletenodes(templist, MEDIAN_WINDOW);
 		
-		/*Count nodes*/
+		// Count nodes
 		count = 0;
 		for (struct tempnode *t = templist; t != NULL; t = t->next) {
 			count++;
 		}
 		
-		if (count == MEDIAN_WINDOW) { 
-			/*Temperatures are only counted once we have 5 samples*/
+		if (count == MEDIAN_WINDOW) { // Temperatures are only counted once we have 5 samples
 			int *sorttemp = malloc(sizeof(int) * MEDIAN_WINDOW);
 			count = 0;
 			for (struct tempnode *t = templist; t != NULL; t = t->next) {
@@ -69,37 +112,37 @@ void tempmonitor(int level)
 			qsort(sorttemp, MEDIAN_WINDOW, sizeof(int), compare); 
 			mediantemp = sorttemp[(MEDIAN_WINDOW - 1) / 2];
 			
-			/*Add median temp to linked list*/
+			// Add median temp to linked list
 			newtemp = malloc(sizeof(struct tempnode));
 			newtemp->temperature = mediantemp;
 			newtemp->next = medianlist;
 			medianlist = newtemp;
 			
-			/*Delete nodes after 30th*/
+			// Delete nodes after 30th
 			deletenodes(medianlist, TEMPCHANGE_WINDOW);
 			
-			/*Count nodes*/
+			// Count nodes
 			count = 0;
 			hightemps = 0;
 			
 			for (struct tempnode *t = medianlist; t != NULL; t = t->next) {
-				/* Temperatures of 58 degrees and higher are a concern*/
+				// Temperatures of 58 degrees and higher are a concern
 				if (t->temperature >= 58) hightemps++;
-				/* Store the oldest temperature for rate-of-rise detection*/
+				// Store the oldest temperature for rate-of-rise detection
 				oldesttemp = t;
 				count++;
 			}
 			
 			if (count == TEMPCHANGE_WINDOW) {
-				/*If 90% of the last 30 temperatures are >= 58 degrees,
-				this is considered a high temperature. Raise the alarm*/
+				// If 90% of the last 30 temperatures are >= 58 degrees,
+				// this is considered a high temperature. Raise the alarm
 				if (hightemps >= TEMPCHANGE_WINDOW * 0.9){
 					pthread_cond_broadcast(&alarm_condvar);
 				}
 				
-				/*If the newest temp is >= 8 degrees higher than the oldest 
-				temp (out of the last 30), this is a high rate-of-rise.
-				Raise the alarm*/
+				// If the newest temp is >= 8 degrees higher than the oldest
+				// temp (out of the last 30), this is a high rate-of-rise.
+				// Raise the alarm
 				if (templist->temperature - oldesttemp->temperature >= 8){
 					pthread_cond_broadcast(&alarm_condvar);
 				}
@@ -111,13 +154,11 @@ void tempmonitor(int level)
 	}
 }
 
-void *openboomgate(void *arg) 
-/*!!NASA Power of 10: #9 (Function pointers are not allowed) */
+void *openboomgate(void *arg) // !!NASA Power of 10: #9 (Function pointers are not allowed)
 {
 	struct boomgate *bg = arg;
 	pthread_mutex_lock(&bg->m);
-	while(bg->s != 'O') { 
-		/*!!NASA Power of 10: #2 (loops have fixed bounds)!! Thread now waits till the gate is open, then leaves it. Once it's done, it unlocks. */
+	while(bg->s != 'O') { // !!NASA Power of 10: #2 (loops have fixed bounds)!! Thread now waits till the gate is open, then leaves it. Once it's done, it unlocks. 
 		if (bg->s == 'C') {
 			bg->s = 'R';
 			pthread_cond_broadcast(&bg->c);
@@ -134,20 +175,18 @@ void emergency_mode(void)
 	while (get_shared_object(&shm, SHARE_NAME) == 0){
 		usleep(10);
 	};
-	/*char key = NULL;*/
+	// char key = NULL;
 	fprintf(stderr, "*** ALARM ACTIVE ***\n");
 	
-	/*Handle the alarm system and open boom gates
-	Activate alarms on all levels*/
-	
+	// Handle the alarm system and open boom gates
+	// Activate alarms on all levels
 	for (int i = 0; i < LEVELS; i++) {
-		int addr = 104 * i + 2498; 
-		/*Octal use not allowed, changed to integer scalar*/
+		int addr = 104 * i + 2498; // Octal use not allowed, changed to integer scalar
 		char *alarm_trigger = (char *)&shm + addr;
 		*alarm_trigger = 1;
 	}
 	
-	/*Open up all boom gates*/
+	// Open up all boom gates
 	pthread_t *boomgatethreads = malloc(sizeof(pthread_t) * (ENTRANCES + EXITS));
 	for (int i = 0; i < ENTRANCES; i++) {
 		int addr = 288 * i + 96;
@@ -160,9 +199,8 @@ void emergency_mode(void)
 		pthread_create(boomgatethreads + ENTRANCES + i, NULL, openboomgate, &bg);
 	}
 	
-	/*Show evacuation message on an endless loop*/
-	do { 
-		/*!!NASA Power of 10: #2 (loops have fixed bounds)!! -- FIXED BY HAVING EXIT KEY PROGRAMMED*/
+	// Show evacuation message on an endless loop
+	do { // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- FIXED BY HAVING EXIT KEY PROGRAMMED
 		pthread_mutex_unlock(&alarm_mutex);
 		char *evacmessage = "EVACUATE ";
 		for (char *p = evacmessage; *p != '\0'; p++) {
@@ -175,7 +213,7 @@ void emergency_mode(void)
 				pthread_mutex_unlock(&sign->m);
 			}
 			usleep(20000);
-			/*key = getchar(); Old idea, would reset once the 'q' key is pressed. Updated to only reset when alarm_active is reset. This can be handled by a controller program. */
+			// key = getchar(); // Old idea, would reset once the 'q' key is pressed. Updated to only reset when alarm_active is reset. This can be handled by a controller program. 
 		}
 		pthread_mutex_lock(&alarm_mutex);
 	} while(*alarm_active == 1);
@@ -186,9 +224,9 @@ void emergency_mode(void)
 }
 
 
-int main(void) 
-/*Must have input declarations -- added 'void' input.*/
+int main(void) // Must have input declarations -- added 'void' input.
 {
+	
 	shm_t shm;
 	while (get_shared_object(&shm, SHARE_NAME) == 0){
 		usleep(10);
@@ -201,12 +239,11 @@ int main(void)
 		pthread_create(fthreads + i, NULL, (void *) tempmonitor, (int *)(uintptr_t)i);
 	}
 
-	/*while(alarm_active == 0){ 
-		This will block the pthread alarm mutex, need better soln; This unlocks, waits for 1sec, then locks and checks alarm variable
-		pthread_mutex_unlock(&alarm_mutex);
-		usleep(1000);
-		pthread_mutex_lock(&alarm_mutex);
-	}*/
+	// while(alarm_active == 0){ // This will block the pthread alarm mutex, need better soln; This unlocks, waits for 1sec, then locks and checks alarm variable
+	// 	pthread_mutex_unlock(&alarm_mutex);
+	// 	usleep(1000);
+	// 	pthread_mutex_lock(&alarm_mutex);
+	// }
 	pthread_mutex_lock(&alarm_mutex);
 	while(alarm_active == 0){
 		pthread_cond_wait(&alarm_condvar, &alarm_mutex);
@@ -216,13 +253,14 @@ int main(void)
 
 	emergency_mode();
 
-	/*for (;;) { 
-		/*!!NASA Power of 10: #2 (loops have fixed bounds)!! -- FIXED
-		if (alarm_active) {
-			emergency_mode(); 
-			!!NASA Power of 10: #1 (Avoid complex flow constructs, like goto)!! -- FIXED
-		}
-		usleep(1000);
-	*/
-	}
+	destroy_shared_object(&shm);
+	// for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- FIXED
+	// 	if (alarm_active) {
+	// 		emergency_mode(); // !!NASA Power of 10: #1 (Avoid complex flow constructs, like goto)!! -- FIXED
+	// 	}
+	// 	usleep(1000);
+	// }
+
+	
+	return 0;
 }

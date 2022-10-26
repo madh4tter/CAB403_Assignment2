@@ -35,13 +35,6 @@ typedef struct car_vec {
 typedef struct node node_t;
 typedef struct queue_node qnode_t;
 
-/* Methods for managing shared memory */
 
-// Create object with PARKING data, set mutexes and conds as shared
-bool create_shared_object( shm_t* shm, const char* share_name );
-
-void destroy_shared_object( shm_t* shm );
-
-bool get_shared_object( shm_t* shm, const char* share_name );
 
 

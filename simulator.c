@@ -1,36 +1,43 @@
-
-
 /* Include shared memory struct definitions */
 #include "PARKING.h"
 #include "simulator.h"
+#include "manager.h"
+#include "shm_methods.h"
+#include "firealarm.h"
+#include "display_shm.h"
 
 #define ACC_CAR_AMT 100
 #define PLATE_LENGTH 6
 
-
-/* this value can count up to 9*10^18 ms or 292 million years
-   if that's too big for memory, I can account for an overflow
-   uint32 is too small, only lasts 50 days
-
-   need to protect this value with a mutex?
-*/
 mstimer_t runtime;
 
 qnode_t *eqlist_head;
 pthread_mutex_t eq_lock;
 pthread_cond_t eq_cond;
 
+qnode_t *exqlist_head;
+pthread_mutex_t exq_lock;
+pthread_cond_t exq_cond;
+
+pthread_mutex_t rand_lock;
+
 node_t *inside_list;
 pthread_mutex_t inlist_lock;
 
 bool ROR_fire = false;
 bool FT_fire = false;
-bool finish = false;
+
+bool running = true;
+pthread_mutex_t run_lock;
+
+char user_input = 'r';
+//pthread_mutex_t input_lock;
+
+shm_t shm;
 
 /* Create linked list for cars existing in simulation */
 node_t *sim_cars_head = NULL;
 pthread_mutex_t sim_cars_lock;
-
 
 /*************** LINKED LIST METHODS ********************************************/
 typedef struct node node_t;
@@ -74,7 +81,7 @@ node_t *node_pop(node_t *head)
         /* 2 or more cars */
         for(; temp_head != NULL; temp_head = temp_head->next){
             /* Find second last node */
-            if(temp_head->next->next->car == NULL){
+            if(temp_head->next->next == NULL){
                 /* Remove reference to end node */
                 ret->car = temp_head->next->car;
                 temp_head->next = NULL;
@@ -99,7 +106,7 @@ node_t *node_find_LP(node_t *head, char *plate){
     return NULL;
 }
 
-node_t *node_delete(node_t *head, car_t *car)
+node_t *snode_delete(node_t *head, car_t *car)
 {
     node_t *previous = NULL;
     node_t *current = head;
@@ -108,10 +115,11 @@ node_t *node_delete(node_t *head, car_t *car)
         if (strcmp(car->plate, current->car->plate) == 0)
         {
             node_t *newhead = head;
-            if (previous == NULL) // first item in list
+            if (previous == NULL) {// first item in list
                 newhead = current->next;
-            else
+            } else {
                 previous->next = current->next;
+            }
             free(current);
             return newhead;
         }
@@ -121,20 +129,13 @@ node_t *node_delete(node_t *head, car_t *car)
     return head;
 }
 
-void node_print(node_t *head){
-    for (; head != NULL; head = head->next)
-    {
-        fprintf(stderr, head->car->plate);
-        fflush(stdout);
-    }
-}
 
 typedef struct queue_node qnode_t;
 
 struct queue_node {
     node_t *queue;
     qnode_t *qnext;
-    uint8_t entrID;
+    uint8_t ID;
 };
 
 qnode_t *qnode_push(qnode_t *head, node_t *queue){
@@ -157,98 +158,101 @@ qnode_t *qnode_push(qnode_t *head, node_t *queue){
 /*************************** SHARED MEMORY METHODS *********************************/
 
 void init_conds(shm_t* shm){
+    pthread_condattr_t cta;
+    pthread_condattr_init(&cta);
+    pthread_condattr_setpshared(&cta, PTHREAD_PROCESS_SHARED);
     for(int i =0; i<ENTRANCES; i++){
-        pthread_cond_init(&(shm->data->entrances[i].LPR.cond), NULL);
-        pthread_cond_init(&(shm->data->entrances[i].gate.cond), NULL);
-        pthread_cond_init(&(shm->data->entrances[i].screen.cond), NULL);
+        pthread_cond_init(&(shm->data->entrances[i].LPR.cond), &cta);
+        pthread_cond_init(&(shm->data->entrances[i].gate.cond), &cta);
+        pthread_cond_init(&(shm->data->entrances[i].screen.cond), &cta);
     }
 
     for(int i =0; i<EXITS; i++){
-        pthread_cond_init(&(shm->data->exits[i].LPR.cond), NULL);
-        pthread_cond_init(&(shm->data->exits[i].gate.cond), NULL);
+        pthread_cond_init(&(shm->data->exits[i].LPR.cond), &cta);
+        pthread_cond_init(&(shm->data->exits[i].gate.cond), &cta);
     }    
 
     for(int i =0; i<LEVELS; i++){
-        pthread_cond_init(&(shm->data->levels[i].LPR.cond), NULL);
+        pthread_cond_init(&(shm->data->levels[i].LPR.cond), &cta);
     }   
 
     pthread_cond_init(&runtime.cond, NULL);
     pthread_cond_init(&eq_cond, NULL);
+
+    
 }
 
 void init_mutexes(shm_t* shm){
+    pthread_mutexattr_t mta;
+    pthread_mutexattr_init(&mta);
+    pthread_mutexattr_setpshared(&mta, PTHREAD_PROCESS_SHARED);
+
     for(int i =0; i<ENTRANCES; i++){
-        pthread_mutex_init(&(shm->data->entrances[i].LPR.lock), NULL);
-        pthread_mutex_init(&(shm->data->entrances[i].gate.lock), NULL);
-        pthread_mutex_init(&(shm->data->entrances[i].screen.lock), NULL);
+        pthread_mutex_init(&(shm->data->entrances[i].LPR.lock), &mta);
+        pthread_mutex_init(&(shm->data->entrances[i].gate.lock), &mta);
+        pthread_mutex_init(&(shm->data->entrances[i].screen.lock), &mta);
     }
 
     for(int i =0; i<EXITS; i++){
-        pthread_mutex_init(&(shm->data->exits[i].LPR.lock), NULL);
-        pthread_mutex_init(&(shm->data->exits[i].gate.lock), NULL);
+        pthread_mutex_init(&(shm->data->exits[i].LPR.lock), &mta);
+        pthread_mutex_init(&(shm->data->exits[i].gate.lock), &mta);
     }    
 
     for(int i =0; i<LEVELS; i++){
-        pthread_mutex_init(&(shm->data->levels[i].LPR.lock), NULL);
+        pthread_mutex_init(&(shm->data->levels[i].LPR.lock), &mta);
     }   
 
     pthread_mutex_init(&runtime.lock, NULL);
     pthread_mutex_init(&eq_lock, NULL);
     pthread_mutex_init(&sim_cars_lock, NULL);
     pthread_mutex_init(&inlist_lock, NULL);
+    pthread_mutex_init(&run_lock, NULL);
+    pthread_mutex_init(&rand_lock, NULL);
+
+    
 }
 
-bool create_shared_object( shm_t* shm, const char* share_name ) {
+bool create_shared_object( shm_t* shared_mem, const char* share_name ) {
     // Remove any previous instance of the shared memory object, if it exists.
     shm_unlink(share_name);
 
     // Assign share name to shm->name.
-    shm->name = share_name;
+    shared_mem->name = share_name;
 
     // Create the shared memory object, allowing read-write access, and saving the
     // resulting file descriptor in shm->fd. If creation failed, ensure 
     // that shm->data is NULL and return false.
-    shm->fd = shm_open(share_name, O_RDWR | O_CREAT, 0666);
+    shared_mem->fd = shm_open(share_name, O_RDWR | O_CREAT, 0666);
 
-    if(shm->fd == -1){
-        shm->data = NULL;
+    if(shared_mem->fd == -1){
+        shared_mem->data = NULL;
         return false;
     }
     
 
     // Set the capacity of the shared memory object via ftruncate. If the 
     // operation fails, ensure that shm->data is NULL and return false. 
-    if(ftruncate(shm->fd, sizeof(PARKING_t)) == -1){
-        shm->data = NULL;
+    if(ftruncate(shared_mem->fd, sizeof(PARKING_t)) == -1){
+        shared_mem->data = NULL;
         return false;
     }
 
     // Otherwise, attempt to map the shared memory via mmap, and save the address
     // in shm->data. If mapping fails, return false.
-    shm->data = mmap(NULL, sizeof(PARKING_t), PROT_READ | PROT_WRITE, MAP_SHARED, 
-                    shm->fd, 0);
-    if(shm->data == (void *)-1){
+    shared_mem->data = mmap(NULL, sizeof(PARKING_t), PROT_READ | PROT_WRITE, MAP_SHARED, 
+                    shared_mem->fd, 0);
+    if(shared_mem->data == (void *)-1){
         return false; 
     }
 
     // Initialise mutexes
-    init_mutexes(shm);
+    init_mutexes(shared_mem);
 
     // Initialise conditional variables
-    init_conds(shm);
+    init_conds(shared_mem);
 
     // If we reach this point we should return true.
     return true;
-}
-
-void destroy_shared_object( shm_t* shm ) {
-    // Remove the shared memory object.
-    munmap(shm, sizeof(shm_t));
-
-    shm_unlink(shm->name);
-
-    shm->fd = -1;
-    shm->data = NULL;
 }
 
 void trig_LPR(LPR_t *LPR, car_t *car){
@@ -264,9 +268,11 @@ void trig_LPR(LPR_t *LPR, car_t *car){
     pthread_mutex_unlock(&LPR->lock);
 
     /* Signal conditional variable */
-    pthread_cond_signal(&LPR->cond);
+    pthread_cond_broadcast(&LPR->cond);
 
 }
+
+
 
 /***************************** FIRE ALARM TEMPS *****************************************/
 
@@ -275,48 +281,47 @@ void temp_start(shm_t *shm)
     int start_temp = 25;
     int base_temp = 10;
 
+    pthread_mutex_lock(&rand_lock);
     for (int i = 0; i < LEVELS; i++)
     {
         shm->data->levels[i].temp = (rand() % start_temp) + base_temp;
     }
+    pthread_mutex_unlock(&rand_lock);
 }
 
 void temp_control(shm_t *shm)
 {
     int change[3] = {-1, 0, 1};
 
-    // At the start
-    if(shm->data->levels[0].temp == 0)
+    pthread_mutex_lock(&rand_lock);
+    int random_index = rand() % 3;
+    pthread_mutex_unlock(&rand_lock);
+
+    int random_change = change[random_index];
+    for (int i = 0; i < LEVELS; i++)
     {
-        printf("Temp start did not work");
-    }
-    // While running
-    else
-    {
-        int random_index = rand() % 3;
-        int random_change = change[random_index];
-        for (int i = 0; i < LEVELS; i++)
+        if(shm->data->levels[i].temp < 11)
         {
-            if(shm->data->levels[i].temp < 11)
-            {
-                shm->data->levels[i].temp += change[2];
-            }
-            else if(shm->data->levels[i].temp > 39)
-            {
-                shm->data->levels[i].temp += change[0];
-            }
-            else
-            {
-                shm->data->levels[i].temp += random_change; 
-            }
+            shm->data->levels[i].temp += change[2];
+        }
+        else if(shm->data->levels[i].temp > 39)
+        {
+            shm->data->levels[i].temp += change[0];
+        }
+        else
+        {
+            shm->data->levels[i].temp += random_change; 
         }
     }
+
 }
 
 void rate_of_rise(shm_t *shm)
 {
     int change = 1;
+    pthread_mutex_lock(&rand_lock);
     int choose = rand() % LEVELS;
+    pthread_mutex_unlock(&rand_lock);
     
     for(int i = 0; i < LEVELS; i++)
     {
@@ -330,7 +335,9 @@ void rate_of_rise(shm_t *shm)
 void fixed_temp(shm_t *shm)
 {
     int large_temp = 100;
+    pthread_mutex_lock(&rand_lock);
     int choose = rand() % LEVELS;
+    pthread_mutex_unlock(&rand_lock);
     
     for(int i = 0; i < LEVELS; i++)
     {
@@ -344,9 +351,15 @@ void fixed_temp(shm_t *shm)
 void temp_update(shm_t *shm)
 {
     temp_start(shm);
+    if(shm->data->levels[0].temp == 0) {
+        printf("Temp start did not work");
+        fflush(stdout);
+        return;
+    }
     
-    while(1)
+    while(running == true)
     {
+
         if (ROR_fire)
         {
             rate_of_rise(shm);
@@ -365,37 +378,63 @@ void temp_update(shm_t *shm)
     }
 }
 
-void check_fire_start(void)
+void check_user_input(void)
 {
-    char input;
-    while(finish == false)
+    /* Gain mutex lock of running variable */
+    pthread_mutex_lock(&run_lock);
+    while(running == true)
     {
-        input = getchar();
+        /* Release lock of running bool variable */
+        pthread_mutex_unlock(&run_lock);
+        user_input = getchar();
 
-        switch (input)
-        {
+        switch (user_input) {
             case 'r':
-                    ROR_fire = true;
-                    printf("rateofrise\n");
-                    break;
+                ROR_fire = true;
+                printf("rateofrise sim\n");
+                break;
             case 'f':
-                    FT_fire = true;
-                    printf("fixedtempture\n");
-                    break;
+                FT_fire = true;
+                printf("fixedtempture sim\n");
+                break;
             case 'd':
-                    finish = true;
-                    printf("You have finished the program\n");
-                    break;
+                pthread_mutex_lock(&run_lock);
+                running = false;
+                pthread_mutex_lock(&run_lock);
+                printf("You have finished the program\n");
+                break;
+            default:
+                break;               
         }
+        /* Gain mutex lock of running variable */
+        pthread_mutex_lock(&run_lock);
     }
 }
 
 
 /********************** MISC FUNCTIONS ********************************************/
+void init_shmvals(shm_t *shared_mem){
+        /* Initialise status of hardware no other threads awake so no need to lock*/
+    for(int i=0; i<ENTRANCES; i++){
+        shared_mem->data->entrances[i].gate.status = 'C';
+        shared_mem->data->entrances[i].LPR.plate[0] = '\0';
+        shared_mem->data->entrances[i].screen.display = '\0';
+    }
+
+    for(int i=0; i<EXITS; i++){
+        shared_mem->data->exits[i].gate.status = 'C';
+        shared_mem->data->exits[i].LPR.plate[0] = '\0';
+    }
+
+    for(int i=0; i<LEVELS; i++){
+        shared_mem->data->levels[i].LPR.plate[0] = '\0';
+    }
+}
+
 node_t *read_file(char *file, node_t *head) {
     FILE* text = fopen(file, "r");
     if(text == NULL){
-        printf("Could not open plates.txt\n");
+        printf("Could not open plates file\n");
         fflush(stdout);
     }
 
@@ -418,11 +457,12 @@ node_t *read_file(char *file, node_t *head) {
 
 void destroy_car(car_t *car){
     pthread_mutex_lock(&sim_cars_lock);
-    sim_cars_head = node_delete(sim_cars_head, car);
+    sim_cars_head = snode_delete(sim_cars_head, car);
     pthread_mutex_unlock(&sim_cars_lock);
 }
 
 char sim_gates(gate_t *gate){
+   pthread_mutex_lock(&gate->lock); 
    while(gate->status == 'O' || gate->status == 'C'){
       pthread_cond_wait(&gate->cond, &gate->lock);
    }
@@ -435,6 +475,7 @@ char sim_gates(gate_t *gate){
    }
    char ret_val = gate->status;
    pthread_mutex_unlock(&gate->lock);
+   pthread_cond_broadcast(&gate->cond);
    return ret_val;
 }
 
@@ -456,8 +497,12 @@ void *thf_time(void *ptr){
     /* determine start time of thread */
     clock_gettime(CLOCK_MONOTONIC, &start);
     
+    /* Gain mutex lock of running variable */
+    pthread_mutex_lock(&run_lock);
+    while(running == true){
+        /* Release lock of running bool variable */
+        pthread_mutex_unlock(&run_lock);
 
-    while(1){
         /* sleep for one millisecond */
         usleep(1000);
 
@@ -475,6 +520,8 @@ void *thf_time(void *ptr){
         pthread_mutex_unlock(&runtime.lock);
         pthread_cond_signal(&runtime.cond);
 
+        /* Gain mutex lock of running variable */
+        pthread_mutex_lock(&run_lock);
     }
 
     return ptr;
@@ -483,7 +530,7 @@ void *thf_time(void *ptr){
 void *thf_creator(void *ptr){
     /* Create linked list for accepted car number plates */
     node_t *acc_cars_head = NULL;
-    acc_cars_head = read_file("plates.txt", acc_cars_head);
+    acc_cars_head = read_file(PLATES_FILE, acc_cars_head);
 
     /* Initialise local loop variables */
     bool exists;
@@ -493,12 +540,21 @@ void *thf_creator(void *ptr){
     node_t *head_temp;
     char str[6];
    
-    while(1){
+    /* Gain mutex lock of running variable */
+    pthread_mutex_lock(&run_lock);
+
+    int count_a = 0;
+
+    while(running == true && count_a < 4){
+        /* Release lock of running bool variable */
+        pthread_mutex_unlock(&run_lock);
+
         /* Wait between 1-100ms before generating another car */
-        /* supposed to protect this with a mutex? seems to work fine without */
-        int wait = (rand() % 99) + 1;
-        usleep(wait * 1000);
-        
+        // pthread_mutex_lock(&rand_lock);
+        // int wait = (rand() % 99) + 1;
+        // usleep(wait * 1000);
+        // pthread_mutex_unlock(&rand_lock);
+        sleep(2);
 
         /* create car */
         car_t *new_car = malloc(sizeof(car_t));
@@ -511,6 +567,7 @@ void *thf_creator(void *ptr){
         count = 0;
         do {
             exists = false;
+            pthread_mutex_lock(&rand_lock);
             if(rand()%2){
                 /* select from approved list */
                 car_loc = rand() % ACC_CAR_AMT;
@@ -531,6 +588,8 @@ void *thf_creator(void *ptr){
                 new_car->plate = strdup(str);
                 }
             }
+            pthread_mutex_unlock(&rand_lock);
+            
 
             /* Check every value in existing cars list to see if it matches. 
             If it matches, regenerate an LP*/
@@ -544,6 +603,7 @@ void *thf_creator(void *ptr){
             }
 
         } while (exists == true);
+        printf("Car made: %s\n", new_car->plate);fflush(stdout);
 
         /* Add onto list of existing cars*/
         pthread_mutex_lock(&sim_cars_lock);
@@ -551,7 +611,9 @@ void *thf_creator(void *ptr){
         pthread_mutex_unlock(&sim_cars_lock);
 
         /* Randomly choose an entrance queue to add to */
+        pthread_mutex_lock(&rand_lock);
         int entranceID = rand() % (ENTRANCES);
+        pthread_mutex_unlock(&rand_lock);
 
         /* Lock mutex of global simulator-shared variable */
         pthread_mutex_lock(&eq_lock);
@@ -559,7 +621,7 @@ void *thf_creator(void *ptr){
         /* Find car queue in list of entrances*/
         eq_temp = eqlist_head;
         for(; eq_temp != NULL; eq_temp = eq_temp->qnext){
-            if(eq_temp->entrID == entranceID){
+            if(eq_temp->ID == entranceID){
                 break;
             }
         }
@@ -570,20 +632,20 @@ void *thf_creator(void *ptr){
         /* Unlock mutex and signal that a new car has arrived */
         pthread_mutex_unlock(&eq_lock);
         pthread_cond_signal(&eq_cond);
+
+        /* Gain mutex lock of running variable */
+        pthread_mutex_lock(&run_lock);
+
+        count_a++;
     }
     return ptr;
 }
 
 void *thf_entr(void *data){
-    /* Correct variable type */
+    /* Correction of variable type */
     int entranceID = *((char *)data);
 
     /* Get shared memory data */
-    shm_t shm;
-    if(!get_shared_object(&shm, SHARE_NAME)){
-        printf("Shared memory connection failed\n");
-        return NULL;
-    }
     shm_t *shm_ptr = &shm;
 
     /* Lock mutex of entrance queue list */
@@ -592,7 +654,7 @@ void *thf_entr(void *data){
     /* Identify head of queue relevant to this thread */
     qnode_t *qhead = eqlist_head;
     for (; qhead != NULL; qhead = qhead->qnext){
-        if(qhead->entrID == entranceID){
+        if(qhead->ID == entranceID){
             break;
         }
     }
@@ -607,6 +669,10 @@ void *thf_entr(void *data){
     /* Initialise loop local variables */
     node_t *popped_node;
     car_t *popped_car;
+    char char_lvl;
+    int assigned_lvl;
+    int leave_time;
+
     while(1){
         /* Lock mutex of entrance queue list */
         pthread_mutex_lock(&eq_lock);
@@ -631,25 +697,35 @@ void *thf_entr(void *data){
 
         /* Trigger LPR */
         trig_LPR(&entrance->LPR, popped_car);
-
+        printf("Car in LPR: %s\n", popped_car->plate);fflush(stdout);
+        
         /* Watch Info Screen for assigned level */
+        pthread_mutex_lock(&entrance->screen.lock);
         pthread_cond_wait(&entrance->screen.cond, &entrance->screen.lock);
-        short assigned_lvl = (short) entrance->screen.display;
-        if(!(assigned_lvl >= '0' && assigned_lvl <= ('0' + ENTRANCES-1))){
+        char_lvl = entrance->screen.display;
+        pthread_mutex_unlock(&entrance->screen.lock);
+        assigned_lvl = (int)char_lvl - 48;
+        printf("Screen said: %c\n", char_lvl);fflush(stdout);
+        
+        if(!(assigned_lvl >= 0 && assigned_lvl <= (0 + ENTRANCES-1))){
             /* Remove car from simulation */
             destroy_car(popped_car);
         } else {
             popped_car->lvl = assigned_lvl;
             level = &shm_ptr->data->levels[assigned_lvl];
         
-        
+            printf("Opening boom gate\n");fflush(stdout);
             /* Raise boom gate */
             while( sim_gates(&entrance->gate) != 'O'){}
-        
+            printf("Boom gate open\n");fflush(stdout);
         
             /* Assign leaving time to car */
+            pthread_mutex_lock(&rand_lock);
+            leave_time = (rand() % 9900) + 100;
+            pthread_mutex_unlock(&rand_lock);
+
             pthread_cond_wait(&runtime.cond, &runtime.lock);
-            popped_car->exit_time = runtime.elapsed + (rand() % 9900) + 100;
+            popped_car->exit_time = runtime.elapsed + leave_time;
             pthread_mutex_unlock(&runtime.lock);
         
             /* Wait for car to drive to spot */
@@ -664,7 +740,11 @@ void *thf_entr(void *data){
             pthread_mutex_unlock(&inlist_lock);
 
             /* Close boom gate */
+            printf("Closing boom gate\n");fflush(stdout);
             while( sim_gates(&entrance->gate) != 'C');
+            printf("Boom gate closed\n");fflush(stdout);
+
+            trig_LPR(&level->LPR, '\0');            
         }
         /* Repeat with next cars in queue */
     }
@@ -672,18 +752,20 @@ void *thf_entr(void *data){
 }
 
 void *thf_inside(void *ptr){
-    shm_t shm;
-    if(!get_shared_object(&shm, SHARE_NAME)){
-        printf("Shared memory connection failed\n");
-        return NULL;
-    }
     shm_t *shm_ptr = &shm;
 
     uint64_t curr_time;
     car_t *leave_car;
     level_t *level;
     int lvlID;
-    while(1){
+    qnode_t *exq_temp;
+
+    /* Gain mutex lock of running variable */
+    pthread_mutex_lock(&run_lock);
+    while(running == true){
+        /* Release lock of running bool variable */
+        pthread_mutex_unlock(&run_lock);    
+
         /* Acquire the time currently */
         pthread_mutex_lock(&runtime.lock);
         curr_time = runtime.elapsed;
@@ -695,48 +777,164 @@ void *thf_inside(void *ptr){
 
         if(leave_car != NULL){
             /* Remove car from inside-carpark list */
-            inside_list = node_delete(inside_list, leave_car)->next;
+            inside_list = snode_delete(inside_list, leave_car)->next;
             pthread_mutex_unlock(&inlist_lock);
 
             /* Set off LPR of leaving car */
             lvlID = leave_car->lvl - '0';
             level = &shm_ptr->data->levels[lvlID];
             trig_LPR(&level->LPR, leave_car);
+
+            /* Add to a random exit queue */
+            /* Randomly choose an exit queue to add to */
+            pthread_mutex_lock(&rand_lock);
+            int exitID = rand() % (EXITS);
+            pthread_mutex_unlock(&rand_lock);
+
+            /* Lock mutex of global simulator-shared variable */
+            pthread_mutex_lock(&exq_lock);
+
+            /* Find car queue in list of exits*/
+            exq_temp = exqlist_head;
+            for(; exq_temp != NULL; exq_temp = exq_temp->qnext){
+                if(exq_temp->ID == exitID){
+                    break;
+                }
+            }
+
+            /* Push new car onto start of queue */
+            exq_temp->queue = node_push(exq_temp->queue, leave_car);
+
+            /* Unlock mutex and signal that a new car has arrived */
+            pthread_mutex_unlock(&exq_lock);
+            pthread_cond_signal(&exq_cond);
+
         } else {
             pthread_mutex_unlock(&inlist_lock);
-        }
-        
-
+        }       
+        /* Gain mutex lock of running variable */
+        pthread_mutex_lock(&run_lock);
     }
 
     return ptr;
 }
+
+void *thf_exit(void *data){
+    /* Correction of variable type */
+    int exitID = *((char *)data);
+
+    shm_t *shm_ptr = &shm;
+
+    /* Lock mutex of exit queue list */
+    pthread_mutex_lock(&exq_lock);
+
+    /* Identify head of queue relevant to this thread */
+    qnode_t *qhead = exqlist_head;
+    for (; qhead != NULL; qhead = qhead->qnext){
+        if(qhead->ID == exitID){
+            break;
+        }
+    }
+
+    /* Acquire the entrance simulated hardware */ 
+    exit_t *exit = &shm_ptr->data->exits[exitID];
+
+    /* Unlock the mutex */
+    pthread_mutex_unlock(&exq_lock);
+
+    /* Initialise loop local variables */
+    node_t *popped_node;
+    car_t *popped_car;
+
+    /* Gain mutex lock of running variable */
+    pthread_mutex_lock(&run_lock);
+    while(running == true){
+        /* Release lock of running bool variable */
+        pthread_mutex_unlock(&run_lock); 
+    
+        /* Lock mutex of entrance queue list */
+        pthread_mutex_lock(&exq_lock);
+
+        /* Check if queue is empty. If so, wait for a car to be added */
+        while(qhead->queue->car == NULL){
+            pthread_cond_wait(&exq_cond, &exq_lock);
+        }
+
+        /* Remove car from end of queue */
+        popped_node = node_pop(qhead->queue);
+
+        /* Popped node holds the popped car and head of the queue with car removed */
+        popped_car = popped_node->car;
+        qhead->queue = popped_node->next;
+
+        /* Unlock mutex */
+        pthread_mutex_unlock(&exq_lock);
+        
+        /* Wait 2ms */
+        usleep(2000);
+
+        /* Trigger LPR */
+        trig_LPR(&exit->LPR, popped_car);
+    
+        /* Raise boom gate */
+        while( sim_gates(&exit->gate) != 'O'){}
+
+        /* Remove car from simulation */
+        destroy_car(popped_car);
+
+        /* Close boom gate */
+        while( sim_gates(&exit->gate) != 'C');
+
+        /* Repeat with next cars in queue */
+        /* Gain mutex lock of running variable */
+        pthread_mutex_lock(&run_lock);
+    }
+        return NULL;
+}
+ 
 /************************** MAIN ***********************************************/
 int main(void){
-    shm_t shm;
-    if(!create_shared_object(&shm, SHARE_NAME)){
+    /* Create shared object before any other process begins */
+    
+    if(create_shared_object(&shm, SHARE_NAME) == false){
         printf("Shared memory creation failed\n");
         return EXIT_FAILURE;
     }
+    shm_t *shm_ptr = &shm;
 
+    init_shmvals(shm_ptr);
+
+
+    /* Create threads for simulator-based functions */
     pthread_t time_th;
     pthread_t creator_th;
-    pthread_t inside_th;
+    // pthread_t inside_th;
 
     pthread_t entr_threads[ENTRANCES];
     int th_entrID[ENTRANCES];
 
+    pthread_t exit_threads[ENTRANCES];
+    int th_exitID[ENTRANCES];
+    
     /* Create linked list that holds linked lists for entrance queues */
+    node_t *queue;
     for(int i=0; i<ENTRANCES; i++){
-        node_t *queue = (node_t *)malloc(sizeof(node_t));
+        queue = (node_t *)malloc(sizeof(node_t));
         eqlist_head = qnode_push(eqlist_head, queue);
-        eqlist_head->entrID = i;
+        eqlist_head->ID = i;
     }
 
-
+    /* Create linked list that holds linked lists for exit queues */
+    for(int i=0; i<EXITS; i++){
+        queue = (node_t *)malloc(sizeof(node_t));
+        exqlist_head = qnode_push(exqlist_head, queue);
+        exqlist_head->ID = i;
+    }
+    
+    /* Create threads for simulator-based functions */
     pthread_create(&time_th, NULL, thf_time, NULL);
     pthread_create(&creator_th, NULL, thf_creator, NULL);
-    pthread_create(&inside_th, NULL, thf_inside, NULL);
+    // pthread_create(&inside_th, NULL, thf_inside, NULL);
 
     for (int i = 0; i < ENTRANCES; i++)
     {
@@ -744,14 +942,42 @@ int main(void){
         pthread_create(&entr_threads[i], NULL, thf_entr, (void *)&th_entrID[i]);
     }
 
+    for (int i = 0; i < EXITS; i++)
+    {
+        th_exitID[i] = i;
+        pthread_create(&exit_threads[i], NULL, thf_exit, (void *)&th_exitID[i]);
+    }
+    
+    // // /* Gain mutex lock of running variable */
+    // // pthread_mutex_lock(&run_lock);
+    // // while(running == true){
+    // //     /* Release lock of running bool variable */
+    // //     pthread_mutex_unlock(&run_lock); 
+    // //     check_user_input();
+    // //     /* Gain mutex lock of running variable */
+    // //     pthread_mutex_lock(&run_lock);
+    // // }
+
+
+
+
+    /* Join all threads back to main */
     for (int i = 0; i < ENTRANCES; i++)
     {
         th_entrID[i] = i;
         pthread_join(entr_threads[i], NULL);
     }
+
+        for (int i = 0; i < EXITS; i++)
+    {
+        th_entrID[i] = i;
+        pthread_join(exit_threads[i], NULL);
+    }
+    
     pthread_join(time_th, NULL);
     pthread_join(creator_th, NULL);
-    pthread_join(inside_th, NULL);
+    // pthread_join(inside_th, NULL);
+
 
 
 
