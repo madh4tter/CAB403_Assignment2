@@ -177,7 +177,7 @@ void *display(void *ptr){
 				get_level(&shm);
 				print_revenue();
 
-				usleep(50);
+				usleep(50000);
 				i++;
 			}
 			else{
