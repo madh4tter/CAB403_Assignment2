@@ -1,18 +1,18 @@
-CC=gcc
-CFLAGS= -lrt -pthread
+all: simulator manager #firealarm
 
-all: simulator manager firealarm
+simulator : simulator.c
+	gcc simulator.c -o simulator -Wall -Wextra -lrt -lpthread
 
-simulator : simulator
-	$(CC) simulator.c simulator.h PARKING.h $(LIBS) -o simulator_run
+manager : manager.c
+	gcc manager.c -o manager -Wall -Wextra -lrt -lpthread
 
-manager : manager
-	$(CC) manager.c PARKING.h linked_list.h hash_table_read.h $(LIBS) -o manager_run
-
-firealarm : firealarm
-	$(CC) firealarm.c firealarm.h PARKING.h $(LIBS) -o firealarm_run
+# fire: firealarm.c
+# 	gcc firealarm.c -o firealarm -Wall -Wextra -lrt -lpthread
 
 clean: 
+	rm -f simulator
+	rm -f manager
+#	rm -f firealarm
 	rm -f *.0
-
+	
 .PHONY: all clean
