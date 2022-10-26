@@ -107,7 +107,8 @@ void tempmonitor(int level)
 			int *sorttemp = malloc(sizeof(int) * MEDIAN_WINDOW);
 			count = 0;
 			for (struct tempnode *t = templist; t != NULL; t = t->next) {
-				sorttemp[count++] = t->temperature;
+				count++;
+				sorttemp[count] = t->temperature;
 			}
 			qsort(sorttemp, MEDIAN_WINDOW, sizeof(int), compare); 
 			mediantemp = sorttemp[(MEDIAN_WINDOW - 1) / 2];
