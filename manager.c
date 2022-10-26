@@ -86,12 +86,14 @@ void entrance_lpr(entrance_t *ent)
     while(running == true)
     {
         pthread_mutex_lock(&ent->LPR.lock);
-        while(ent->LPR.plate[0] == NONE) /* Checks if there is a car at the LPR */
-        {
-            pthread_cond_wait(&ent->LPR.cond, &ent->LPR.lock); /* Wait until a car appears */
-        }
+        // while(ent->LPR.plate[0] == NONE) /* Checks if there is a car at the LPR */
+        // {
+        //     pthread_cond_wait(&ent->LPR.cond, &ent->LPR.lock); /* Wait until a car appears */
+        // }
+        
         strcpy(holder, ent->LPR.plate);
-        if(search_plate(&htab, holder) == 1) /* Checks if the car is allowed in */
+        node_t* find = node_find_lp(car_list, ent->LPR.plate);
+        if(search_plate(&htab, holder) == 1 && find == NULL) /* Checks if the car is allowed in */
         {
             pthread_mutex_lock(&car_park_lock);
             //printf("Counter: %d\n", m_counter);fflush(stdout);

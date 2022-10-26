@@ -11,6 +11,7 @@
 
 #include "firealarm.h"
 #include "PARKING.h"
+#include "shm_methods.h"
 
 
 
@@ -223,9 +224,9 @@ void emergency_mode(void)
 }
 
 
-void *firealarm(void *ptr) // Must have input declarations -- added 'void' input.
+int main(void) // Must have input declarations -- added 'void' input.
 {
-	/*
+	
 	shm_t shm;
 	while (get_shared_object(&shm, SHARE_NAME) == 0){
 		usleep(10);
@@ -252,6 +253,7 @@ void *firealarm(void *ptr) // Must have input declarations -- added 'void' input
 
 	emergency_mode();
 
+	destroy_shared_object(&shm);
 	// for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- FIXED
 	// 	if (alarm_active) {
 	// 		emergency_mode(); // !!NASA Power of 10: #1 (Avoid complex flow constructs, like goto)!! -- FIXED
@@ -259,6 +261,6 @@ void *firealarm(void *ptr) // Must have input declarations -- added 'void' input
 	// 	usleep(1000);
 	// }
 
-	*/
-	return ptr;
+	
+	return 0;
 }

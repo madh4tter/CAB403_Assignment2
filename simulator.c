@@ -19,6 +19,8 @@ qnode_t *exqlist_head;
 pthread_mutex_t exq_lock;
 pthread_cond_t exq_cond;
 
+pthread_mutex_t rand_lock;
+
 node_t *inside_list;
 pthread_mutex_t inlist_lock;
 
@@ -205,6 +207,8 @@ void init_mutexes(shm_t* shm){
     pthread_mutex_init(&sim_cars_lock, NULL);
     pthread_mutex_init(&inlist_lock, NULL);
     pthread_mutex_init(&run_lock, NULL);
+    pthread_mutex_init(&rand_lock, NULL);
+
     
 }
 
@@ -264,7 +268,7 @@ void trig_LPR(LPR_t *LPR, car_t *car){
     pthread_mutex_unlock(&LPR->lock);
 
     /* Signal conditional variable */
-    pthread_cond_signal(&LPR->cond);
+    pthread_cond_broadcast(&LPR->cond);
 
 }
 
@@ -277,17 +281,22 @@ void temp_start(shm_t *shm)
     int start_temp = 25;
     int base_temp = 10;
 
+    pthread_mutex_lock(&rand_lock);
     for (int i = 0; i < LEVELS; i++)
     {
         shm->data->levels[i].temp = (rand() % start_temp) + base_temp;
     }
+    pthread_mutex_unlock(&rand_lock);
 }
 
 void temp_control(shm_t *shm)
 {
     int change[3] = {-1, 0, 1};
 
+    pthread_mutex_lock(&rand_lock);
     int random_index = rand() % 3;
+    pthread_mutex_unlock(&rand_lock);
+
     int random_change = change[random_index];
     for (int i = 0; i < LEVELS; i++)
     {
@@ -310,7 +319,9 @@ void temp_control(shm_t *shm)
 void rate_of_rise(shm_t *shm)
 {
     int change = 1;
+    pthread_mutex_lock(&rand_lock);
     int choose = rand() % LEVELS;
+    pthread_mutex_unlock(&rand_lock);
     
     for(int i = 0; i < LEVELS; i++)
     {
@@ -324,7 +335,9 @@ void rate_of_rise(shm_t *shm)
 void fixed_temp(shm_t *shm)
 {
     int large_temp = 100;
+    pthread_mutex_lock(&rand_lock);
     int choose = rand() % LEVELS;
+    pthread_mutex_unlock(&rand_lock);
     
     for(int i = 0; i < LEVELS; i++)
     {
@@ -462,6 +475,7 @@ char sim_gates(gate_t *gate){
    }
    char ret_val = gate->status;
    pthread_mutex_unlock(&gate->lock);
+   pthread_cond_broadcast(&gate->cond);
    return ret_val;
 }
 
@@ -536,9 +550,10 @@ void *thf_creator(void *ptr){
         pthread_mutex_unlock(&run_lock);
 
         /* Wait between 1-100ms before generating another car */
-        /* supposed to protect this with a mutex? seems to work fine without */
-        //int wait = (rand() % 99) + 1;
-        //usleep(wait * 1000);
+        // pthread_mutex_lock(&rand_lock);
+        // int wait = (rand() % 99) + 1;
+        // usleep(wait * 1000);
+        // pthread_mutex_unlock(&rand_lock);
         sleep(2);
 
         /* create car */
@@ -552,6 +567,7 @@ void *thf_creator(void *ptr){
         count = 0;
         do {
             exists = false;
+            pthread_mutex_lock(&rand_lock);
             if(rand()%2){
                 /* select from approved list */
                 car_loc = rand() % ACC_CAR_AMT;
@@ -572,8 +588,8 @@ void *thf_creator(void *ptr){
                 new_car->plate = strdup(str);
                 }
             }
-
-            printf("Car made: %s\n", new_car->plate);fflush(stdout);
+            pthread_mutex_unlock(&rand_lock);
+            
 
             /* Check every value in existing cars list to see if it matches. 
             If it matches, regenerate an LP*/
@@ -587,6 +603,7 @@ void *thf_creator(void *ptr){
             }
 
         } while (exists == true);
+        printf("Car made: %s\n", new_car->plate);fflush(stdout);
 
         /* Add onto list of existing cars*/
         pthread_mutex_lock(&sim_cars_lock);
@@ -594,7 +611,9 @@ void *thf_creator(void *ptr){
         pthread_mutex_unlock(&sim_cars_lock);
 
         /* Randomly choose an entrance queue to add to */
+        pthread_mutex_lock(&rand_lock);
         int entranceID = rand() % (ENTRANCES);
+        pthread_mutex_unlock(&rand_lock);
 
         /* Lock mutex of global simulator-shared variable */
         pthread_mutex_lock(&eq_lock);
@@ -652,6 +671,7 @@ void *thf_entr(void *data){
     car_t *popped_car;
     char char_lvl;
     int assigned_lvl;
+    int leave_time;
 
     while(1){
         /* Lock mutex of entrance queue list */
@@ -700,8 +720,12 @@ void *thf_entr(void *data){
             printf("Boom gate open\n");fflush(stdout);
         
             /* Assign leaving time to car */
+            pthread_mutex_lock(&rand_lock);
+            leave_time = (rand() % 9900) + 100;
+            pthread_mutex_unlock(&rand_lock);
+
             pthread_cond_wait(&runtime.cond, &runtime.lock);
-            popped_car->exit_time = runtime.elapsed + (rand() % 9900) + 100;
+            popped_car->exit_time = runtime.elapsed + leave_time;
             pthread_mutex_unlock(&runtime.lock);
         
             /* Wait for car to drive to spot */
@@ -716,7 +740,9 @@ void *thf_entr(void *data){
             pthread_mutex_unlock(&inlist_lock);
 
             /* Close boom gate */
+            printf("Closing boom gate\n");fflush(stdout);
             while( sim_gates(&entrance->gate) != 'C');
+            printf("Boom gate closed\n");fflush(stdout);
 
             trig_LPR(&level->LPR, '\0');            
         }
@@ -761,7 +787,9 @@ void *thf_inside(void *ptr){
 
             /* Add to a random exit queue */
             /* Randomly choose an exit queue to add to */
+            pthread_mutex_lock(&rand_lock);
             int exitID = rand() % (EXITS);
+            pthread_mutex_unlock(&rand_lock);
 
             /* Lock mutex of global simulator-shared variable */
             pthread_mutex_lock(&exq_lock);
