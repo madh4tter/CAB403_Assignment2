@@ -1,15 +1,18 @@
-CC=gcc
-CFLAGS= -l -pthread
+all: simulator manager #firealarm
 
-all: mimicPark
-	echo "Done"
+simulator : simulator.c
+	gcc simulator.c -o simulator -Wall -Wextra -lrt -lpthread
 
+manager : manager.c
+	gcc manager.c -o manager -Wall -Wextra -lrt -lpthread
 
-manager.o: manager.c PARKING.h linked_list.h hash_table.h
-simulator.o: simulator.c simulator.h PARKING.h
-firealarm.o: firealarm.c firealarm.h PARKING.h
-
-mimicPark: firealarm.o manager.o simulator.o
+# fire: firealarm.c
+# 	gcc firealarm.c -o firealarm -Wall -Wextra -lrt -lpthread
 
 clean: 
+	rm -f simulator
+	rm -f manager
+#	rm -f firealarm
 	rm -f *.0
+	
+.PHONY: all clean
