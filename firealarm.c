@@ -31,15 +31,15 @@ pthread_t *fthreads;
 #define TEMPCHANGE_WINDOW 30
 
 struct boomgate {
-	pthread_mutex_t m;
-	pthread_cond_t c;
-	char s;
+	pthread_mutex_t boom_mutex;
+	pthread_cond_t boom_cond;
+	char boom_char;
 };
 
 struct parkingsign {
-	pthread_mutex_t m;
-	pthread_cond_t c;
-	char display;
+	pthread_mutex_t parking_mutex;
+	pthread_cond_t parking_cond;
+	char parking_display;
 };
 
 struct tempnode {
@@ -157,16 +157,16 @@ void tempmonitor(int level)
 
 void *openboomgate(void *arg) // !!NASA Power of 10: #9 (Function pointers are not allowed)
 {
-	struct boomgate *bg = arg;
-	pthread_mutex_lock(&bg->m);
-	while(bg->s != 'O') { // !!NASA Power of 10: #2 (loops have fixed bounds)!! Thread now waits till the gate is open, then leaves it. Once it's done, it unlocks. 
-		if (bg->s == 'C') {
-			bg->s = 'R';
-			pthread_cond_broadcast(&bg->c);
+	struct boomgate *boom_gate = arg;
+	pthread_mutex_lock(&boom_gate->boom_mutex);
+	while(boom_gate->boom_char != 'O') { // !!NASA Power of 10: #2 (loops have fixed bounds)!! Thread now waits till the gate is open, then leaves it. Once it's done, it unlocks. 
+		if (boom_gate->boom_char == 'C') {
+			boom_gate->boom_char = 'R';
+			pthread_cond_broadcast(&boom_gate->boom_cond);
 		}
-		pthread_cond_wait(&bg->c, &bg->m);
+		pthread_cond_wait(&boom_gate->boom_cond, &boom_gate->m);
 	} 
-	pthread_mutex_unlock(&bg->m);
+	pthread_mutex_unlock(&boom_gate->boom_mutex);
 	return arg; 
 }
 
@@ -208,10 +208,10 @@ void emergency_mode(void)
 			for (int i = 0; i < ENTRANCES; i++) {
 				int addr = 288 * i + 192;
 				struct parkingsign *sign = (void*)&shm + addr;
-				pthread_mutex_lock(&sign->m);
-				sign->display = *p;
-				pthread_cond_broadcast(&sign->c);
-				pthread_mutex_unlock(&sign->m);
+				pthread_mutex_lock(&sign->parking_mutex);
+				sign->parking_display = *p;
+				pthread_cond_broadcast(&sign->parking_cond);
+				pthread_mutex_unlock(&sign->parking_mutex);
 			}
 			usleep(20000);
 			// key = getchar(); // Old idea, would reset once the 'q' key is pressed. Updated to only reset when alarm_active is reset. This can be handled by a controller program. 
