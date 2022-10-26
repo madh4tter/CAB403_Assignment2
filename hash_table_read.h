@@ -86,8 +86,7 @@ bool htab_destroy(htab_t *h)
 
 void get_plates(htab_t *h, const char *input){
     FILE* text  = fopen(input, "r");
-    char line[10];
-    
+    char line[11];
     while (NULL != fgets(line, sizeof(line), text))
     {
         htab_add(h, line);

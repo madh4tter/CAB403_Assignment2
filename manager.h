@@ -2,10 +2,17 @@
  * \file   manager.h
  * \brief  API definition for the manager c file 
  * 
- * \author Fraser Toon + Kanye West
+ * \author Fraser Toon
  * \date   24/09/2022
  *********************************************************************/
 #pragma once
+
+#ifndef MANAGER_H
+#define MANAGER_H
+
+void *manager(void *ptr);
+
+#endif
 
 /**
  * Monitor the status of the LPR sensors and keep track of where each car is in the car
@@ -43,7 +50,7 @@
 */
 
 
-// Get shared memory and check it works (What infomation is being shared to manager?)\
+// Get shared memory and check it works (What infomation is being shared to manager?)
 
 // Create a vechicle type to store infomation about each vechile that comes in
 

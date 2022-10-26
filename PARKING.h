@@ -24,14 +24,21 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <string.h>
+#include <time.h>
 
 #define SHARE_NAME "PARKING"
+#define PLATES_FILE "plates.txt"
+#define REVENUE_FILE "billing.txt"
+#define GOTO_LINE1 "\033[u" /* use saved cursor location */
+
 
 /* Define characteristics of car-park */
 #define ENTRANCES 1
 #define EXITS 1
 #define LEVELS 1
-#define LEVEL_CAPACITY 1
+#define LEVEL_CAPACITY 10
+
+
 
 /* Structure for simulated hardware */
 typedef struct LPR {
@@ -97,25 +104,13 @@ typedef struct shared_memory {
 
 } shm_t;
 
-bool get_shared_object( shm_t* shm, const char* share_name ) {
-    // Get a file descriptor connected to shared memory object and save in 
-    // shm->fd. If the operation fails, ensure that shm->data is 
-    // NULL and return false.
-    shm->fd = shm_open(share_name, O_RDWR, 0666);
-    // Check if shm_open worked
-    if(shm->fd == -1){
-        shm->data = NULL;
-        return false;
-    }
 
-    // Otherwise, attempt to map the shared memory via mmap, and save the address
-    // in shm->data. If mapping fails, return false.
-    shm->data = mmap(NULL, sizeof(PARKING_t), PROT_READ | PROT_WRITE, MAP_SHARED, 
-                    shm->fd, 0);
-    if(shm->data == (void *)-1){
-        return false; 
-    }
+#ifndef GET_SHARED_MEM
+#define GET_SHARED_MEM
+bool get_shared_object( shm_t* shm, const char* share_name );
+#endif
 
-    // Modify the remaining stub only if necessary.
-    return true;
-}
+#ifndef DES_SHARED_MEM
+#define DES_SHARED_MEM
+void destroy_shared_object( shm_t* shm );
+#endif
