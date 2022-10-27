@@ -13,7 +13,7 @@ mstimer_t runtime;
 
 qnode_t *eqlist_head;
 pthread_mutex_t eq_lock;
-pthread_cond_t eq_cond;
+pthread_cond_t eq_cond; 
 
 qnode_t *exqlist_head;
 pthread_mutex_t exq_lock;
@@ -56,9 +56,13 @@ node_t *node_push(node_t *head, car_t *car){
         fflush(stdout);
         return NULL;
     }
-
     new->car = car;
-    new->next = head;
+    if(head == NULL){
+        new->next = NULL;
+    } else {
+        new->next = head;
+    }
+    
 
     return new;
 }
@@ -68,6 +72,7 @@ node_t *node_pop(node_t *head)
     /* Remove and return the last car of a linked list */
     node_t *ret = (node_t *)malloc(sizeof(node_t));
     node_t *temp_head = head;
+    ret->next = head;
 
     if (head == NULL){
         /* return NULL if list is empty */
@@ -75,7 +80,7 @@ node_t *node_pop(node_t *head)
     } else if(head->next->car == NULL) {
         /* case where only one car in queue */
         ret->car = head->car;
-        ret->next = NULL;
+        ret->next->car = NULL;
         return ret;
     } else {
         /* 2 or more cars */
@@ -92,6 +97,7 @@ node_t *node_pop(node_t *head)
             }
         }
     }
+
     return NULL;
 }
 
@@ -153,6 +159,7 @@ qnode_t *qnode_push(qnode_t *head, node_t *queue){
 
     return new;
 }
+
 
 
 /*************************** SHARED MEMORY METHODS *********************************/
@@ -674,23 +681,24 @@ void *thf_entr(void *data){
     int leave_time;
 
     while(1){
+        
         /* Lock mutex of entrance queue list */
         pthread_mutex_lock(&eq_lock);
-
         /* Check if queue is empty. If so, wait for a car to be added */
         while(qhead->queue->car == NULL){
             pthread_cond_wait(&eq_cond, &eq_lock);
         }
-
+        
         /* Remove car from end of queue */
         popped_node = node_pop(qhead->queue);
-
+        
         /* Popped node holds the popped car and head of the queue with car removed */
         popped_car = popped_node->car;
         qhead->queue = popped_node->next;
 
         /* Unlock mutex */
         pthread_mutex_unlock(&eq_lock);
+        
         
         /* Wait 2ms */
         usleep(2000);
@@ -743,8 +751,7 @@ void *thf_entr(void *data){
             printf("Closing boom gate\n");fflush(stdout);
             while( sim_gates(&entrance->gate) != 'C');
             printf("Boom gate closed\n");fflush(stdout);
-
-            trig_LPR(&level->LPR, '\0');            
+         
         }
         /* Repeat with next cars in queue */
     }
@@ -903,7 +910,7 @@ int main(void){
     shm_t *shm_ptr = &shm;
 
     init_shmvals(shm_ptr);
-
+    //printf("%p", shm_ptr);
 
     /* Create threads for simulator-based functions */
     pthread_t time_th;

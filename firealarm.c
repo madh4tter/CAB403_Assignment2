@@ -164,7 +164,7 @@ void *openboomgate(void *arg) // !!NASA Power of 10: #9 (Function pointers are n
 			boom_gate->boom_char = 'R';
 			pthread_cond_broadcast(&boom_gate->boom_cond);
 		}
-		pthread_cond_wait(&boom_gate->boom_cond, &boom_gate->m);
+		pthread_cond_wait(&boom_gate->boom_cond, &boom_gate->boom_mutex);
 	} 
 	pthread_mutex_unlock(&boom_gate->boom_mutex);
 	return arg; 

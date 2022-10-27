@@ -14,7 +14,7 @@ pthread_t exit_thread[EXITS];
 pthread_t level_thread[LEVELS];
 pthread_t boom_gates_enter[ENTRANCES];
 pthread_t boom_gates_exit[EXITS];
-
+ 
 // Global Variables
 bool running = true;
 int m_counter = 0;
@@ -77,26 +77,48 @@ char level_assign(int car_count[LEVELS]) /* Assign car to level*/
     return level_char;
 }
 
+// Boomgates //////////////////////////////////////////////////////////////////////
+void m_sim_gates(gate_t *gate){
+   pthread_mutex_lock(&gate->lock);
+   if(gate->status == 'C'){
+    gate->status = 'R';
+    pthread_cond_signal(&gate->cond);
+    while(gate->status != 'O'){
+        pthread_cond_wait(&gate->cond, &gate->lock);
+    }
+    usleep(20*1000);
+    gate->status = 'L';
+    pthread_cond_signal(&gate->cond);
+    while(gate->status != 'C'){
+        pthread_cond_wait(&gate->cond, &gate->lock);
+    }
+   }
+   pthread_mutex_unlock(&gate->lock);
+   pthread_cond_broadcast(&gate->cond);
+}
+
+
 void entrance_lpr(entrance_t *ent)
 {
     int car_count_levels[LEVELS];
     char holder[6];
     char assign_level;
+    node_t* find;
 
     while(running == true)
     {
         pthread_mutex_lock(&ent->LPR.lock);
-        // while(ent->LPR.plate[0] == NONE) /* Checks if there is a car at the LPR */
-        // {
-        //     pthread_cond_wait(&ent->LPR.cond, &ent->LPR.lock); /* Wait until a car appears */
-        // }
-        
+
+        pthread_cond_wait(&ent->LPR.cond, &ent->LPR.lock); /* Wait until a car appears */
+
         strcpy(holder, ent->LPR.plate);
-        node_t* find = node_find_lp(car_list, ent->LPR.plate);
+        pthread_mutex_unlock(&ent->LPR.lock);
+
+        find = node_find_lp(car_list, holder);
+
         if(search_plate(&htab, holder) == 1 && find == NULL) /* Checks if the car is allowed in */
         {
             pthread_mutex_lock(&car_park_lock);
-            //printf("Counter: %d\n", m_counter);fflush(stdout);
             if (m_counter < (LEVELS * LEVEL_CAPACITY))
             {
                 m_counter++;
@@ -108,15 +130,16 @@ void entrance_lpr(entrance_t *ent)
                 pthread_mutex_lock(&ent->screen.lock);
                 ent->screen.display = assign_level; /* Sceen show level value */
                 pthread_mutex_unlock(&ent->screen.lock);
+                pthread_cond_signal(&ent->screen.cond);
+
+                usleep(2000); /* ensure that sim is waiting for signal */
+                m_sim_gates(&ent->gate);
 
                 vehicle_t* new_vehicle = malloc(sizeof(vehicle_t)); /* Create new levels */
-                new_vehicle->licence_plate = (char*)ent->LPR.plate;
+                new_vehicle->licence_plate = (char*)holder;
                 new_vehicle->level = &assign_level;
                 new_vehicle->arrival = clock();
-
-                pthread_mutex_lock(&ent->screen.lock);
-                ent->screen.display = '0'; /* Clear the screen */
-                pthread_mutex_unlock(&ent->screen.lock);
+                
 
                 node_t *newhead = node_add(car_list, new_vehicle);
                 car_list = newhead; /* Add car to linked list*/
@@ -128,6 +151,7 @@ void entrance_lpr(entrance_t *ent)
                 pthread_mutex_lock(&ent->screen.lock);
                 ent->screen.display = 'F'; /* Full message */
                 pthread_mutex_unlock(&ent->screen.lock);
+                pthread_cond_signal(&ent->screen.cond);
             }
         }
         else /* If the car is not allowed*/
@@ -135,46 +159,12 @@ void entrance_lpr(entrance_t *ent)
             pthread_mutex_lock(&ent->screen.lock);
             ent->screen.display = 'X';
             pthread_mutex_unlock(&ent->screen.lock);
-        }
-
-        pthread_cond_signal(&ent->screen.cond);
-        pthread_mutex_unlock(&ent->LPR.lock);
+            pthread_cond_signal(&ent->screen.cond);
+        }       
     }  
 }
 
-// Boomgates //////////////////////////////////////////////////////////////////////
 
-void boomgate(entrance_t *ent) /* Boom gate funcation */
-{
-    while(running == true)
-    {
-        if (ent->screen.display != NONE && ent->gate.status == 'C') /* Rising */
-        {
-            pthread_mutex_lock(&ent->gate.lock);
-            ent->gate.status = 'R';
-            pthread_mutex_unlock(&ent->gate.lock);
-
-            do 
-            {
-                pthread_cond_wait(&ent->gate.cond, &ent->gate.lock);
-            } while (ent->gate.status != 'O');
-        }
-
-        //usleep(2 * 1000);
-
-        if (ent->gate.status == 'O') /* Lowering */
-        {
-            pthread_mutex_lock(&ent->gate.lock);
-            ent->gate.status = 'L';
-            pthread_mutex_unlock(&ent->gate.lock);
-
-            do
-            {
-                pthread_cond_wait(&ent->gate.cond, &ent->gate.lock);
-            } while(ent->gate.status != 'C');
-        }
-    }
-}
 
 // Level Adjustments ////////////////////////////////////////////////////////////
 
@@ -262,16 +252,19 @@ void get_entry(){
 	for(int i = 0; i < ENTRANCES; i++){
 		/* lpr status */
 		pthread_mutex_lock(&shm_ptr->data->entrances[i].LPR.lock);
+        // printf("Passed LPR"); fflush(stdout);
 		plate_num = shm_ptr->data->entrances[i].LPR.plate;
 		pthread_mutex_unlock(&shm_ptr->data->entrances[i].LPR.lock);
 
 		/* gate status */
 		pthread_mutex_lock(&shm_ptr->data->entrances[i].gate.lock);
+        // printf("Passed Gate"); fflush(stdout);
 		bg_status = shm_ptr->data->entrances[i].gate.status;
 		pthread_mutex_unlock(&shm_ptr->data->entrances[i].gate.lock);
 
 		/* info screen */
 		pthread_mutex_lock(&shm_ptr->data->entrances[i].screen.lock);
+        // printf("Passed screen"); fflush(stdout);
 		sign_display = shm_ptr->data->entrances[i].screen.display;
 		pthread_mutex_unlock(&shm_ptr->data->entrances[i].screen.lock);
 
@@ -417,7 +410,7 @@ void *thf_display(void *ptr){
 
 			/* if no fail print display otherwise break loop */
 			if(check_for_fail(buf) != true){
-				system("clear");
+				// system("clear");
 				get_entry(&shm);
 				get_exit(&shm);
 				get_level(&shm);
@@ -448,6 +441,8 @@ int main(void)
         print_err("error getting shared memory\n");
     }
 
+    //printf("%p", &shm);
+
     // Get Licence plates
     htab_create();
     get_plates(&htab, PLATES_FILE);
@@ -473,12 +468,6 @@ int main(void)
             print_err("error creating threads\n");
         }
 
-        // The boomgates for each entrance
-        error = pthread_create(&boom_gates_enter[i], NULL, (void*)boomgate, &shm.data->entrances[i]);
-        if (error != 0)
-        {
-            print_err("error creating boomgates\n");
-        }
     }
 
     // Level Threads
@@ -505,11 +494,6 @@ int main(void)
             print_err("error creating thread\n");
         }
 
-        error = pthread_create(&boom_gates_exit[i], NULL, (void*)boomgate, &shm.data->exits[i]);
-        if (error != 0)
-        {
-            print_err("error creating boomgate\n");
-        }
     }
 
     // End threads
@@ -535,11 +519,11 @@ int main(void)
     }
 
     // // Clean up everything
-    pthread_mutex_destroy(&car_park_lock);
-    free(car_list);
+    // pthread_mutex_destroy(&car_park_lock);
+    // free(car_list);
     // destroy_shared_object(&shm);
-    htab_destroy(&htab);
-    printf("Made it to the end");
+    // htab_destroy(&htab);
+    // printf("Made it to the end");
     return 0;
 }
 
