@@ -82,13 +82,13 @@ void m_sim_gates(gate_t *gate){
    pthread_mutex_lock(&gate->lock);
    if(gate->status == 'C'){
     gate->status = 'R';
-    pthread_cond_signal(&gate->cond);
+    pthread_cond_broadcast(&gate->cond);
     while(gate->status != 'O'){
         pthread_cond_wait(&gate->cond, &gate->lock);
     }
     usleep(20*1000);
     gate->status = 'L';
-    pthread_cond_signal(&gate->cond);
+    pthread_cond_broadcast(&gate->cond);
     while(gate->status != 'C'){
         pthread_cond_wait(&gate->cond, &gate->lock);
     }

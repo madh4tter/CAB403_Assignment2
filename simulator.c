@@ -364,7 +364,7 @@ void temp_update(shm_t *shm)
         return;
     }
     
-    while(running == true)
+    while(true)
     {
 
         if (ROR_fire)
@@ -387,12 +387,9 @@ void temp_update(shm_t *shm)
 
 void check_user_input(void)
 {
-    /* Gain mutex lock of running variable */
-    pthread_mutex_lock(&run_lock);
-    while(running == true)
+    while(true)
     {
-        /* Release lock of running bool variable */
-        pthread_mutex_unlock(&run_lock);
+
         user_input = getchar();
 
         switch (user_input) {
@@ -406,15 +403,13 @@ void check_user_input(void)
                 break;
             case 'd':
                 pthread_mutex_lock(&run_lock);
-                running = false;
+                //running = false;
                 pthread_mutex_lock(&run_lock);
                 printf("You have finished the program\n");
                 break;
             default:
                 break;               
         }
-        /* Gain mutex lock of running variable */
-        pthread_mutex_lock(&run_lock);
     }
 }
 
@@ -489,7 +484,7 @@ char sim_gates(gate_t *gate){
 car_t *comp_times(node_t *head, uint64_t elap_time){
     for (; head != NULL; head = head->next)
     {
-        if (head->car->exit_time >= elap_time)
+        if (head->car->exit_time <= elap_time)
         {
             return head->car;
         }
@@ -504,12 +499,7 @@ void *thf_time(void *ptr){
     /* determine start time of thread */
     clock_gettime(CLOCK_MONOTONIC, &start);
     
-    /* Gain mutex lock of running variable */
-    pthread_mutex_lock(&run_lock);
-    while(running == true){
-        /* Release lock of running bool variable */
-        pthread_mutex_unlock(&run_lock);
-
+    while(true){
         /* sleep for one millisecond */
         usleep(1000);
 
@@ -526,9 +516,6 @@ void *thf_time(void *ptr){
         /* Signal that change has occured and unlock the mutex */
         pthread_mutex_unlock(&runtime.lock);
         pthread_cond_signal(&runtime.cond);
-
-        /* Gain mutex lock of running variable */
-        pthread_mutex_lock(&run_lock);
     }
 
     return ptr;
@@ -546,15 +533,13 @@ void *thf_creator(void *ptr){
     qnode_t *eq_temp;
     node_t *head_temp;
     char str[6];
-   
-    /* Gain mutex lock of running variable */
-    pthread_mutex_lock(&run_lock);
+
 
     int count_a = 0;
 
-    while(running == true && count_a < 4){
-        /* Release lock of running bool variable */
-        pthread_mutex_unlock(&run_lock);
+    while(count_a < 1){
+        count_a++;
+
 
         /* Wait between 1-100ms before generating another car */
         // pthread_mutex_lock(&rand_lock);
@@ -640,10 +625,6 @@ void *thf_creator(void *ptr){
         pthread_mutex_unlock(&eq_lock);
         pthread_cond_signal(&eq_cond);
 
-        /* Gain mutex lock of running variable */
-        pthread_mutex_lock(&run_lock);
-
-        count_a++;
     }
     return ptr;
 }
@@ -681,7 +662,6 @@ void *thf_entr(void *data){
     int leave_time;
 
     while(1){
-        
         /* Lock mutex of entrance queue list */
         pthread_mutex_lock(&eq_lock);
         /* Check if queue is empty. If so, wait for a car to be added */
@@ -731,13 +711,15 @@ void *thf_entr(void *data){
             leave_time = (rand() % 9900) + 100;
             pthread_mutex_unlock(&rand_lock);
 
-            pthread_cond_wait(&runtime.cond, &runtime.lock);
+            pthread_mutex_lock(&runtime.lock);
             popped_car->exit_time = runtime.elapsed + leave_time;
+            printf("Time now: %ld Leave at: %d\n", runtime.elapsed,
+            popped_car->exit_time); fflush(stdout);
             pthread_mutex_unlock(&runtime.lock);
         
             /* Wait for car to drive to spot */
             usleep(10000);
-        
+
             /* Signal Level LPR */
             trig_LPR(&level->LPR, popped_car);
 
@@ -766,12 +748,8 @@ void *thf_inside(void *ptr){
     int lvlID;
     qnode_t *exq_temp;
 
-    /* Gain mutex lock of running variable */
-    pthread_mutex_lock(&run_lock);
-    while(running == true){
-        /* Release lock of running bool variable */
-        pthread_mutex_unlock(&run_lock);    
 
+    while(true){
         /* Acquire the time currently */
         pthread_mutex_lock(&runtime.lock);
         curr_time = runtime.elapsed;
@@ -783,13 +761,15 @@ void *thf_inside(void *ptr){
 
         if(leave_car != NULL){
             /* Remove car from inside-carpark list */
-            inside_list = snode_delete(inside_list, leave_car)->next;
+            inside_list = snode_delete(inside_list, leave_car);
             pthread_mutex_unlock(&inlist_lock);
+            printf("removed from list\n");fflush(stdout);
 
             /* Set off LPR of leaving car */
-            lvlID = leave_car->lvl - '0';
+            lvlID = leave_car->lvl;
             level = &shm_ptr->data->levels[lvlID];
             trig_LPR(&level->LPR, leave_car);
+            printf("Set off Level LPR again\n"); fflush(stdout);
 
             /* Add to a random exit queue */
             /* Randomly choose an exit queue to add to */
@@ -818,8 +798,7 @@ void *thf_inside(void *ptr){
         } else {
             pthread_mutex_unlock(&inlist_lock);
         }       
-        /* Gain mutex lock of running variable */
-        pthread_mutex_lock(&run_lock);
+        usleep(1000);
     }
 
     return ptr;
@@ -852,12 +831,7 @@ void *thf_exit(void *data){
     node_t *popped_node;
     car_t *popped_car;
 
-    /* Gain mutex lock of running variable */
-    pthread_mutex_lock(&run_lock);
-    while(running == true){
-        /* Release lock of running bool variable */
-        pthread_mutex_unlock(&run_lock); 
-    
+    while(true){
         /* Lock mutex of entrance queue list */
         pthread_mutex_lock(&exq_lock);
 
@@ -868,6 +842,7 @@ void *thf_exit(void *data){
 
         /* Remove car from end of queue */
         popped_node = node_pop(qhead->queue);
+        
 
         /* Popped node holds the popped car and head of the queue with car removed */
         popped_car = popped_node->car;
@@ -881,19 +856,23 @@ void *thf_exit(void *data){
 
         /* Trigger LPR */
         trig_LPR(&exit->LPR, popped_car);
+        printf("Exit LPR triggered with: %s\n", popped_car->plate); fflush(stdout);
     
         /* Raise boom gate */
         while( sim_gates(&exit->gate) != 'O'){}
+        printf("Exit gates rising\n"); fflush(stdout);
 
         /* Remove car from simulation */
         destroy_car(popped_car);
 
         /* Close boom gate */
+        printf("Exit gates closing\n"); fflush(stdout);
         while( sim_gates(&exit->gate) != 'C');
+        printf("Exit gates closed\n"); fflush(stdout);
+
+        
 
         /* Repeat with next cars in queue */
-        /* Gain mutex lock of running variable */
-        pthread_mutex_lock(&run_lock);
     }
         return NULL;
 }
@@ -914,7 +893,7 @@ int main(void){
     /* Create threads for simulator-based functions */
     pthread_t time_th;
     pthread_t creator_th;
-    // pthread_t inside_th;
+    pthread_t inside_th;
 
     pthread_t entr_threads[ENTRANCES];
     int th_entrID[ENTRANCES];
@@ -940,7 +919,7 @@ int main(void){
     /* Create threads for simulator-based functions */
     pthread_create(&time_th, NULL, thf_time, NULL);
     pthread_create(&creator_th, NULL, thf_creator, NULL);
-    // pthread_create(&inside_th, NULL, thf_inside, NULL);
+    pthread_create(&inside_th, NULL, thf_inside, NULL);
 
     for (int i = 0; i < ENTRANCES; i++)
     {
@@ -982,7 +961,7 @@ int main(void){
     
     pthread_join(time_th, NULL);
     pthread_join(creator_th, NULL);
-    // pthread_join(inside_th, NULL);
+    pthread_join(inside_th, NULL);
 
 
 
