@@ -561,7 +561,7 @@ void *thf_creator(void *ptr){
         // int wait = (rand() % 99) + 1;
         // usleep(wait * 1000);
         // pthread_mutex_unlock(&rand_lock);
-        sleep(2);
+        sleep(1);
 
         /* create car */
         car_t *new_car = malloc(sizeof(car_t));
@@ -698,7 +698,6 @@ void *thf_entr(void *data){
 
         /* Unlock mutex */
         pthread_mutex_unlock(&eq_lock);
-        
         
         /* Wait 2ms */
         usleep(2000);

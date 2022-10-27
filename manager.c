@@ -106,7 +106,7 @@ void entrance_lpr(entrance_t *ent)
     node_t* find;
 
     while(running == true)
-    {
+    { 
         pthread_mutex_lock(&ent->LPR.lock);
 
         pthread_cond_wait(&ent->LPR.cond, &ent->LPR.lock); /* Wait until a car appears */
@@ -116,7 +116,7 @@ void entrance_lpr(entrance_t *ent)
 
         find = node_find_lp(car_list, holder);
 
-        if(search_plate(&htab, holder) == 1 && find == NULL) /* Checks if the car is allowed in */
+        if(search_plate(&htab, holder) == true && find == NULL) /* Checks if the car is allowed in */
         {
             pthread_mutex_lock(&car_park_lock);
             if (m_counter < (LEVELS * LEVEL_CAPACITY))
@@ -132,17 +132,18 @@ void entrance_lpr(entrance_t *ent)
                 pthread_mutex_unlock(&ent->screen.lock);
                 pthread_cond_signal(&ent->screen.cond);
 
-                usleep(2000); /* ensure that sim is waiting for signal */
-                m_sim_gates(&ent->gate);
-
                 vehicle_t* new_vehicle = malloc(sizeof(vehicle_t)); /* Create new levels */
-                new_vehicle->licence_plate = (char*)holder;
+                new_vehicle->licence_plate = strdup((char*)holder);
                 new_vehicle->level = &assign_level;
                 new_vehicle->arrival = clock();
                 
 
                 node_t *newhead = node_add(car_list, new_vehicle);
                 car_list = newhead; /* Add car to linked list*/
+
+                usleep(2000); /* ensure that sim is waiting for signal */
+                m_sim_gates(&ent->gate);
+
 
             }
             else /* If the carpark is full */
@@ -410,7 +411,7 @@ void *thf_display(void *ptr){
 
 			/* if no fail print display otherwise break loop */
 			if(check_for_fail(buf) != true){
-				// system("clear");
+				system("clear");
 				get_entry(&shm);
 				get_exit(&shm);
 				get_level(&shm);
