@@ -25,9 +25,6 @@ pthread_mutex_t rand_lock;
 node_t *inside_list;
 pthread_mutex_t inlist_lock;
 
-char user_input = 'n';
-pthread_mutex_t input_lock;
-
 shm_t shm;
 
 /* Create linked list for cars existing in simulation */
@@ -208,7 +205,6 @@ void init_mutexes(shm_t* shm){
     pthread_mutex_init(&sim_cars_lock, NULL);
     pthread_mutex_init(&inlist_lock, NULL);
     pthread_mutex_init(&rand_lock, NULL);
-    pthread_mutex_init(&input_lock, NULL);
 
 
     
@@ -278,48 +274,65 @@ void trig_LPR(LPR_t *LPR, car_t *car){
 
 /***************************** FIRE ALARM TEMPS *****************************************/
 
-void temp_start(shm_t *shm)
+void temp_start()
 {
+    shm_t *shm_ptr = &shm;
+
     int start_temp = 25;
     int base_temp = 10;
 
     pthread_mutex_lock(&rand_lock);
     for (int i = 0; i < LEVELS; i++)
     {
-        shm->data->levels[i].temp = (rand() % start_temp) + base_temp;
+        shm_ptr->data->levels[i].temp = (rand() % start_temp) + base_temp;
     }
     pthread_mutex_unlock(&rand_lock);
 }
 
-void temp_control(shm_t *shm)
+void *thf_temp(void *ptr)
 {
+    shm_t *shm_ptr = &shm;
+
+    temp_start();
     int change[3] = {-1, 0, 1};
+    int random_index;
+    int wait;
 
-    pthread_mutex_lock(&rand_lock);
-    int random_index = rand() % 3;
-    pthread_mutex_unlock(&rand_lock);
+    while(1){
+        pthread_mutex_lock(&rand_lock);
+        random_index = rand() % 3;
+        wait = (rand() % 4) +1;
+        pthread_mutex_unlock(&rand_lock);
+        //usleep(wait *1000);
+        sleep(1);
 
-    int random_change = change[random_index];
-    for (int i = 0; i < LEVELS; i++)
-    {
-        if(shm->data->levels[i].temp < 11)
+        int random_change = change[random_index];
+        for (int i = 0; i < LEVELS; i++)
         {
-            shm->data->levels[i].temp += change[2];
+            if(shm_ptr->data->levels[i].temp < 11)
+            {
+                shm_ptr->data->levels[i].temp += change[2];
+            }
+            else if(shm_ptr->data->levels[i].temp > 39)
+            {
+                shm_ptr->data->levels[i].temp += change[0];
+            }
+            else
+            {
+                shm_ptr->data->levels[i].temp += random_change; 
+            }
         }
-        else if(shm->data->levels[i].temp > 39)
-        {
-            shm->data->levels[i].temp += change[0];
-        }
-        else
-        {
-            shm->data->levels[i].temp += random_change; 
-        }
+        //printf("%d\n", shm_ptr->data->levels[0].temp);
+        fflush(stdout);
     }
+    return ptr;
 
 }
 
-void rate_of_rise(shm_t *shm)
+void rate_of_rise()
 {
+    shm_t *shm_ptr = &shm;
+
     int change = 1;
     pthread_mutex_lock(&rand_lock);
     int choose = rand() % LEVELS;
@@ -329,13 +342,15 @@ void rate_of_rise(shm_t *shm)
     {
         if (choose == i)
         {
-            shm->data->levels[i].temp += change; 
+            shm_ptr->data->levels[i].temp += change; 
         }
     }
 }
 
-void fixed_temp(shm_t *shm)
+void fixed_temp()
 {
+    shm_t *shm_ptr = &shm;
+
     int large_temp = 100;
     pthread_mutex_lock(&rand_lock);
     int choose = rand() % LEVELS;
@@ -345,69 +360,59 @@ void fixed_temp(shm_t *shm)
     {
         if (choose == i)
         {
-            shm->data->levels[i].temp = large_temp; 
+            shm_ptr->data->levels[i].temp = large_temp; 
         }
     }
 }
 
-void temp_update(shm_t *shm)
+
+char check_user_input(void)
 {
-    temp_start(shm);
-    if(shm->data->levels[0].temp == 0) {
-        printf("Temp start failed\n");
-        fflush(stdout);
-        return;
-    }
-    
-    char local_input = 'n';
-    while(local_input != 'e')
-    {
-        pthread_mutex_lock(&input_lock);
-        local_input = user_input;
-        pthread_mutex_unlock(&input_lock);
+    char user_input = getchar();
+    char ret;
+    char alarm_check = 0;
+    shm_t *shm_ptr = &shm;
 
-        if (local_input == 'r')
-        {
-            rate_of_rise(shm);
-            usleep(10);
-        }
-        else if (local_input == 'f')
-        {
-            fixed_temp(shm);
-            usleep(10);
-        }
-        else
-        {
-            temp_control(shm);
-            usleep(10);
-        }
-    }
-}
+    switch(user_input){
+        case 'r':
+            rate_of_rise(shm_ptr);
+            while(alarm_check != 1){
+                for(int i = 0; i < LEVELS; i++){
+                    if(shm_ptr->data->levels[i].alarm == 1){
+                        alarm_check = 1;
+                    }
+                }
+            }
 
-void check_user_input(void)
-{
-    char local_input;
-    while(local_input != 'e')
-    {
-        pthread_mutex_lock(&input_lock);
-        user_input = getchar();
-        local_input = user_input;
-        pthread_mutex_unlock(&input_lock);
-
-        switch (local_input) {
-            case 'r':
-                printf("Running Rate of Rise Simulation\n");
-                break;
-            case 'f':
-                printf("Running Fixed Temperature Simulation\n");
-                break;
-            case 'e':
-                printf("Simulator ending\n");
-                break;
-            default:
-                break;               
-        }
+            ret = 'a';
+            printf("Running Rate of Rise Simulation\n"); 
+            fflush(stdout);
+            break;
+        case 'f':
+            fixed_temp(shm_ptr);
+            while(alarm_check != 1){
+                for(int i = 0; i < LEVELS; i++){
+                    if(shm_ptr->data->levels[i].alarm == 1){
+                        alarm_check = 1;
+                    }
+                }
+            }            
+            ret = 'a';
+            printf("Running Fixed Temperature Simulation\n"); 
+            fflush(stdout);
+            break;
+        case 'e':
+            ret = 'e';
+            printf("Simulator ending\n");
+            fflush(stdout);
+            break;
+        default:
+            fixed_temp(shm_ptr);
+            printf("Default Alarm Sounding\n");
+            ret = 'a';
+            break;
     }
+    return ret;     
 }
 
 
@@ -427,6 +432,7 @@ void init_shmvals(shm_t *shared_mem){
 
     for(int i=0; i<LEVELS; i++){
         shared_mem->data->levels[i].LPR.plate[0] = '\0';
+        shared_mem->data->levels[i].alarm = '0';
     }
 }
 
@@ -496,8 +502,7 @@ void *thf_time(void *ptr){
     /* determine start time of thread */
     clock_gettime(CLOCK_MONOTONIC, &start);
     
-    char local_input = 'n';
-    while(local_input == 'n')
+    while(1)
     {
         /* sleep for one millisecond */
         usleep(1000);
@@ -515,11 +520,6 @@ void *thf_time(void *ptr){
         /* Signal that change has occured and unlock the mutex */
         pthread_mutex_unlock(&runtime.lock);
         pthread_cond_signal(&runtime.cond);
-
-        /* Check if the thread should run again */
-        pthread_mutex_lock(&input_lock);
-        local_input = user_input;
-        pthread_mutex_unlock(&input_lock);
     }
 
     return ptr;
@@ -539,8 +539,7 @@ void *thf_creator(void *ptr){
     node_t *head_temp;
     char str[6];
 
-    char local_input = 'n';
-    while(local_input == 'n'){
+    while(1){
         /* Wait between 1-100ms before generating another car */
         pthread_mutex_lock(&rand_lock);
         int wait = (rand() % 99) + 1;
@@ -623,11 +622,6 @@ void *thf_creator(void *ptr){
         /* Unlock mutex and signal that a new car has arrived */
         pthread_mutex_unlock(&eq_lock);
         pthread_cond_signal(&eq_cond);
-
-        /* Check whether thread should continue */
-        pthread_mutex_lock(&input_lock);
-        local_input = user_input;
-        pthread_mutex_unlock(&input_lock);
     }
     return ptr;
 }
@@ -663,9 +657,8 @@ void *thf_entr(void *data){
     char char_lvl;
     int assigned_lvl;
     int leave_time;
-    char local_input;
 
-    while(local_input == 'n'){
+    while(1){
         /* Lock mutex of entrance queue list */
         pthread_mutex_lock(&eq_lock);
         /* Check if queue is empty. If so, wait for a car to be added */
@@ -732,10 +725,6 @@ void *thf_entr(void *data){
             while( sim_gates(&entrance->gate) != 'C');
         }
         /* Repeat with next cars in queue */
-        /* Check whether thread should continue */
-        pthread_mutex_lock(&input_lock);
-        local_input = user_input;
-        pthread_mutex_unlock(&input_lock);
     }
     return NULL;
 }
@@ -748,9 +737,8 @@ void *thf_inside(void *ptr){
     level_t *level;
     int lvlID;
     qnode_t *exq_temp;
-    char local_input = 'n';
 
-    while(local_input == 'n'){
+    while(1){
         /* Acquire the time currently */
         pthread_mutex_lock(&runtime.lock);
         curr_time = runtime.elapsed;
@@ -799,11 +787,6 @@ void *thf_inside(void *ptr){
         }     
         /* Wait one ms before checking again */  
         usleep(1000);
-
-        /* Check whether thread should continue */
-        pthread_mutex_lock(&input_lock);
-        local_input = user_input;
-        pthread_mutex_unlock(&input_lock);
     }
 
     return ptr;
@@ -835,9 +818,8 @@ void *thf_exit(void *data){
     /* Initialise loop local variables */
     node_t *popped_node;
     car_t *popped_car;
-    char local_input = 'n';
 
-    while(local_input == 'n'){
+    while(1){
         /* Lock mutex of entrance queue list */
         pthread_mutex_lock(&exq_lock);
 
@@ -873,13 +855,46 @@ void *thf_exit(void *data){
         while( sim_gates(&exit->gate) != 'C');
 
         /* Repeat with next cars in queue */
-        /* Check whether thread should continue */
-        pthread_mutex_lock(&input_lock);
-        local_input = user_input;
-        pthread_mutex_unlock(&input_lock);
     }
         return NULL;
 }
+
+void *thf_entrAlarm(void *data){
+    /* Correction of variable type */
+    int entranceID = *((char *)data);
+    shm_t *shm_ptr = &shm;
+    entrance_t *entrance = &shm_ptr->data->entrances[entranceID];
+
+    
+
+    pthread_mutex_lock(&entrance->gate.lock);
+    pthread_cond_wait(&entrance->gate.cond, &entrance->gate.lock);
+    usleep(10*1000);
+    entrance->gate.status = 'O';
+    pthread_mutex_unlock(&entrance->gate.lock);
+    pthread_cond_broadcast(&entrance->gate.cond);
+
+    return NULL;
+}
+
+void *thf_exitAlarm(void *data){
+    /* Correction of variable type */
+    int exitID = *((char *)data);
+    shm_t *shm_ptr = &shm;
+    exit_t *exit = &shm_ptr->data->exits[exitID];
+
+    
+
+    pthread_mutex_lock(&exit->gate.lock);
+    pthread_cond_wait(&exit->gate.cond, &exit->gate.lock);
+    usleep(10*1000);
+    exit->gate.status = 'O';
+    pthread_mutex_unlock(&exit->gate.lock);
+    pthread_cond_broadcast(&exit->gate.cond);
+
+    return NULL;
+}
+
  
 /************************** MAIN ***********************************************/
 int main(void){
@@ -896,6 +911,7 @@ int main(void){
     pthread_t time_th;
     pthread_t creator_th;
     pthread_t inside_th;
+    pthread_t temp_th;
 
     pthread_t entr_threads[ENTRANCES];
     int th_entrID[ENTRANCES];
@@ -917,11 +933,14 @@ int main(void){
         exqlist_head = qnode_push(exqlist_head, queue);
         exqlist_head->ID = i;
     }
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
     
     /* Create threads for simulator-based functions */
     pthread_create(&time_th, NULL, thf_time, NULL);
     pthread_create(&creator_th, NULL, thf_creator, NULL);
     pthread_create(&inside_th, NULL, thf_inside, NULL);
+    pthread_create(&temp_th, NULL, thf_temp, NULL);
 
     for (int i = 0; i < ENTRANCES; i++)
     {
@@ -936,9 +955,59 @@ int main(void){
     }
     
     
-    check_user_input();
+    char local_input = check_user_input();
 
 
+    switch (local_input) {
+        case 'a':
+            pthread_cancel(time_th);
+            pthread_cancel(creator_th);
+            pthread_cancel(inside_th);
+            pthread_cancel(temp_th);
+
+            for (int i = 0; i < ENTRANCES; i++)
+            {
+                pthread_cancel(entr_threads[i]);
+            }
+
+            for (int i = 0; i < EXITS; i++)
+            {
+                pthread_cancel(exit_threads[i]);
+            }
+            for (int i = 0; i < ENTRANCES; i++)
+            {
+                th_entrID[i] = i;
+                pthread_create(&entr_threads[i], NULL, thf_entrAlarm, (void *)&th_entrID[i]);
+            }
+            
+            for (int i = 0; i < EXITS; i++)
+            {
+                th_exitID[i] = i;
+                pthread_create(&exit_threads[i], NULL, thf_exitAlarm, (void *)&th_exitID[i]);
+            }
+            
+            break;
+        case 'e':
+            pthread_cancel(time_th);
+            pthread_cancel(creator_th);
+            pthread_cancel(inside_th);
+            pthread_cancel(temp_th);
+            for (int i = 0; i < ENTRANCES; i++)
+            {
+                pthread_cancel(entr_threads[i]);
+            }
+
+            for (int i = 0; i < EXITS; i++)
+            {
+                pthread_cancel(exit_threads[i]);
+            }
+
+            // free(&shm);
+            
+            break;
+        default:
+            break;  
+    }
 
 
     /* Join all threads back to main */
