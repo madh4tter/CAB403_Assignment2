@@ -251,9 +251,9 @@ int main(void) // Must have input declarations -- added 'void' input.
 	// 	pthread_mutex_lock(&alarm_mutex);
 	// }
 	pthread_mutex_lock(&alarm_mutex);
-	while(alarm_active == 0){
-		pthread_cond_wait(&alarm_condvar, &alarm_mutex);
-	}
+
+	pthread_cond_wait(&alarm_condvar, &alarm_mutex);
+
 	*alarm_active = 1;
 	pthread_mutex_unlock(&alarm_mutex);
 
