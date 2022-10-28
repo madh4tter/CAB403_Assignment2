@@ -10,7 +10,7 @@ typedef struct vehicle
 {
     char* licence_plate; // What is the licence plate of the vehicle
     char* level; // Where level is the vehicle on
-    time_t arrival; // When did the vehicle arrive (For billing)
+    uint16_t arrival; // When did the vehicle arrive (For billing)
 }  vehicle_t;
 
 typedef struct node node_t;

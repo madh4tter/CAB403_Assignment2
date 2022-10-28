@@ -9,6 +9,7 @@
 #define ACC_CAR_AMT 100
 #define PLATE_LENGTH 6
 
+
 mstimer_t runtime;
 
 qnode_t *eqlist_head;
@@ -24,14 +25,8 @@ pthread_mutex_t rand_lock;
 node_t *inside_list;
 pthread_mutex_t inlist_lock;
 
-bool ROR_fire = false;
-bool FT_fire = false;
-
-bool running = true;
-pthread_mutex_t run_lock;
-
-char user_input = 'r';
-//pthread_mutex_t input_lock;
+char user_input = 'n';
+pthread_mutex_t input_lock;
 
 shm_t shm;
 
@@ -52,7 +47,7 @@ node_t *node_push(node_t *head, car_t *car){
     node_t *new = (node_t *)malloc(sizeof(node_t));
     if (new == NULL)
     {
-        printf("Memory allocation failure");
+        printf("Memory allocation failed\n");
         fflush(stdout);
         return NULL;
     }
@@ -62,7 +57,6 @@ node_t *node_push(node_t *head, car_t *car){
     } else {
         new->next = head;
     }
-    
 
     return new;
 }
@@ -86,10 +80,10 @@ node_t *node_pop(node_t *head)
         /* 2 or more cars */
         for(; temp_head != NULL; temp_head = temp_head->next){
             /* Find second last node */
-            if(temp_head->next->next == NULL){
+            if(temp_head->next->next->car == NULL){
                 /* Remove reference to end node */
                 ret->car = temp_head->next->car;
-                temp_head->next = NULL;
+                temp_head->next->car = NULL;
                 ret->next = head;
 
                 /* return popped node */
@@ -149,7 +143,7 @@ qnode_t *qnode_push(qnode_t *head, node_t *queue){
     qnode_t *new = (qnode_t *)malloc(sizeof(qnode_t));
     if (new == NULL)
     {
-        printf("Memory allocation failure");
+        printf("Memory allocation failed\n");
         fflush(stdout);
         return NULL;
     }
@@ -213,8 +207,9 @@ void init_mutexes(shm_t* shm){
     pthread_mutex_init(&eq_lock, NULL);
     pthread_mutex_init(&sim_cars_lock, NULL);
     pthread_mutex_init(&inlist_lock, NULL);
-    pthread_mutex_init(&run_lock, NULL);
     pthread_mutex_init(&rand_lock, NULL);
+    pthread_mutex_init(&input_lock, NULL);
+
 
     
 }
@@ -359,20 +354,24 @@ void temp_update(shm_t *shm)
 {
     temp_start(shm);
     if(shm->data->levels[0].temp == 0) {
-        printf("Temp start did not work");
+        printf("Temp start failed\n");
         fflush(stdout);
         return;
     }
     
-    while(true)
+    char local_input = 'n';
+    while(local_input != 'e')
     {
+        pthread_mutex_lock(&input_lock);
+        local_input = user_input;
+        pthread_mutex_unlock(&input_lock);
 
-        if (ROR_fire)
+        if (local_input == 'r')
         {
             rate_of_rise(shm);
             usleep(10);
         }
-        else if (FT_fire)
+        else if (local_input == 'f')
         {
             fixed_temp(shm);
             usleep(10);
@@ -387,25 +386,23 @@ void temp_update(shm_t *shm)
 
 void check_user_input(void)
 {
-    while(true)
+    char local_input;
+    while(local_input != 'e')
     {
-
+        pthread_mutex_lock(&input_lock);
         user_input = getchar();
+        local_input = user_input;
+        pthread_mutex_unlock(&input_lock);
 
-        switch (user_input) {
+        switch (local_input) {
             case 'r':
-                ROR_fire = true;
-                printf("rateofrise sim\n");
+                printf("Running Rate of Rise Simulation\n");
                 break;
             case 'f':
-                FT_fire = true;
-                printf("fixedtempture sim\n");
+                printf("Running Fixed Temperature Simulation\n");
                 break;
-            case 'd':
-                pthread_mutex_lock(&run_lock);
-                //running = false;
-                pthread_mutex_lock(&run_lock);
-                printf("You have finished the program\n");
+            case 'e':
+                printf("Simulator ending\n");
                 break;
             default:
                 break;               
@@ -436,7 +433,7 @@ void init_shmvals(shm_t *shared_mem){
 node_t *read_file(char *file, node_t *head) {
     FILE* text = fopen(file, "r");
     if(text == NULL){
-        printf("Could not open plates file\n");
+        printf("Failed to open plates file\n");
         fflush(stdout);
     }
 
@@ -499,7 +496,9 @@ void *thf_time(void *ptr){
     /* determine start time of thread */
     clock_gettime(CLOCK_MONOTONIC, &start);
     
-    while(true){
+    char local_input = 'n';
+    while(local_input == 'n')
+    {
         /* sleep for one millisecond */
         usleep(1000);
 
@@ -516,12 +515,18 @@ void *thf_time(void *ptr){
         /* Signal that change has occured and unlock the mutex */
         pthread_mutex_unlock(&runtime.lock);
         pthread_cond_signal(&runtime.cond);
+
+        /* Check if the thread should run again */
+        pthread_mutex_lock(&input_lock);
+        local_input = user_input;
+        pthread_mutex_unlock(&input_lock);
     }
 
     return ptr;
 }
 
 void *thf_creator(void *ptr){
+    sleep(1);
     /* Create linked list for accepted car number plates */
     node_t *acc_cars_head = NULL;
     acc_cars_head = read_file(PLATES_FILE, acc_cars_head);
@@ -534,19 +539,14 @@ void *thf_creator(void *ptr){
     node_t *head_temp;
     char str[6];
 
-
-    int count_a = 0;
-
-    while(count_a < 1){
-        count_a++;
-
-
+    char local_input = 'n';
+    while(local_input == 'n'){
         /* Wait between 1-100ms before generating another car */
-        // pthread_mutex_lock(&rand_lock);
-        // int wait = (rand() % 99) + 1;
-        // usleep(wait * 1000);
-        // pthread_mutex_unlock(&rand_lock);
-        sleep(1);
+        pthread_mutex_lock(&rand_lock);
+        int wait = (rand() % 99) + 1;
+        usleep(wait * 1000);
+        pthread_mutex_unlock(&rand_lock);
+        //sleep(1);
 
         /* create car */
         car_t *new_car = malloc(sizeof(car_t));
@@ -595,7 +595,6 @@ void *thf_creator(void *ptr){
             }
 
         } while (exists == true);
-        printf("Car made: %s\n", new_car->plate);fflush(stdout);
 
         /* Add onto list of existing cars*/
         pthread_mutex_lock(&sim_cars_lock);
@@ -604,7 +603,7 @@ void *thf_creator(void *ptr){
 
         /* Randomly choose an entrance queue to add to */
         pthread_mutex_lock(&rand_lock);
-        int entranceID = rand() % (ENTRANCES);
+        int entranceID = rand() % ENTRANCES;
         pthread_mutex_unlock(&rand_lock);
 
         /* Lock mutex of global simulator-shared variable */
@@ -625,6 +624,10 @@ void *thf_creator(void *ptr){
         pthread_mutex_unlock(&eq_lock);
         pthread_cond_signal(&eq_cond);
 
+        /* Check whether thread should continue */
+        pthread_mutex_lock(&input_lock);
+        local_input = user_input;
+        pthread_mutex_unlock(&input_lock);
     }
     return ptr;
 }
@@ -660,17 +663,20 @@ void *thf_entr(void *data){
     char char_lvl;
     int assigned_lvl;
     int leave_time;
+    char local_input;
 
-    while(1){
+    while(local_input == 'n'){
         /* Lock mutex of entrance queue list */
         pthread_mutex_lock(&eq_lock);
         /* Check if queue is empty. If so, wait for a car to be added */
         while(qhead->queue->car == NULL){
             pthread_cond_wait(&eq_cond, &eq_lock);
         }
-        
-        /* Remove car from end of queue */
-        popped_node = node_pop(qhead->queue);
+
+        popped_node = NULL;
+        while(popped_node == NULL){
+            popped_node = node_pop(qhead->queue);
+        }
         
         /* Popped node holds the popped car and head of the queue with car removed */
         popped_car = popped_node->car;
@@ -684,27 +690,23 @@ void *thf_entr(void *data){
 
         /* Trigger LPR */
         trig_LPR(&entrance->LPR, popped_car);
-        printf("Car in LPR: %s\n", popped_car->plate);fflush(stdout);
-        
+
         /* Watch Info Screen for assigned level */
         pthread_mutex_lock(&entrance->screen.lock);
         pthread_cond_wait(&entrance->screen.cond, &entrance->screen.lock);
         char_lvl = entrance->screen.display;
         pthread_mutex_unlock(&entrance->screen.lock);
         assigned_lvl = (int)char_lvl - 48;
-        printf("Screen said: %c\n", char_lvl);fflush(stdout);
         
-        if(!(assigned_lvl >= 0 && assigned_lvl <= (0 + ENTRANCES-1))){
+        if(!(assigned_lvl >= 0 && assigned_lvl <= (ENTRANCES-1))){
             /* Remove car from simulation */
             destroy_car(popped_car);
         } else {
             popped_car->lvl = assigned_lvl;
             level = &shm_ptr->data->levels[assigned_lvl];
         
-            printf("Opening boom gate\n");fflush(stdout);
             /* Raise boom gate */
             while( sim_gates(&entrance->gate) != 'O'){}
-            printf("Boom gate open\n");fflush(stdout);
         
             /* Assign leaving time to car */
             pthread_mutex_lock(&rand_lock);
@@ -713,8 +715,6 @@ void *thf_entr(void *data){
 
             pthread_mutex_lock(&runtime.lock);
             popped_car->exit_time = runtime.elapsed + leave_time;
-            printf("Time now: %ld Leave at: %d\n", runtime.elapsed,
-            popped_car->exit_time); fflush(stdout);
             pthread_mutex_unlock(&runtime.lock);
         
             /* Wait for car to drive to spot */
@@ -729,12 +729,13 @@ void *thf_entr(void *data){
             pthread_mutex_unlock(&inlist_lock);
 
             /* Close boom gate */
-            printf("Closing boom gate\n");fflush(stdout);
             while( sim_gates(&entrance->gate) != 'C');
-            printf("Boom gate closed\n");fflush(stdout);
-         
         }
         /* Repeat with next cars in queue */
+        /* Check whether thread should continue */
+        pthread_mutex_lock(&input_lock);
+        local_input = user_input;
+        pthread_mutex_unlock(&input_lock);
     }
     return NULL;
 }
@@ -747,9 +748,9 @@ void *thf_inside(void *ptr){
     level_t *level;
     int lvlID;
     qnode_t *exq_temp;
+    char local_input = 'n';
 
-
-    while(true){
+    while(local_input == 'n'){
         /* Acquire the time currently */
         pthread_mutex_lock(&runtime.lock);
         curr_time = runtime.elapsed;
@@ -763,13 +764,11 @@ void *thf_inside(void *ptr){
             /* Remove car from inside-carpark list */
             inside_list = snode_delete(inside_list, leave_car);
             pthread_mutex_unlock(&inlist_lock);
-            printf("removed from list\n");fflush(stdout);
 
             /* Set off LPR of leaving car */
             lvlID = leave_car->lvl;
             level = &shm_ptr->data->levels[lvlID];
             trig_LPR(&level->LPR, leave_car);
-            printf("Set off Level LPR again\n"); fflush(stdout);
 
             /* Add to a random exit queue */
             /* Randomly choose an exit queue to add to */
@@ -797,8 +796,14 @@ void *thf_inside(void *ptr){
 
         } else {
             pthread_mutex_unlock(&inlist_lock);
-        }       
+        }     
+        /* Wait one ms before checking again */  
         usleep(1000);
+
+        /* Check whether thread should continue */
+        pthread_mutex_lock(&input_lock);
+        local_input = user_input;
+        pthread_mutex_unlock(&input_lock);
     }
 
     return ptr;
@@ -830,8 +835,9 @@ void *thf_exit(void *data){
     /* Initialise loop local variables */
     node_t *popped_node;
     car_t *popped_car;
+    char local_input = 'n';
 
-    while(true){
+    while(local_input == 'n'){
         /* Lock mutex of entrance queue list */
         pthread_mutex_lock(&exq_lock);
 
@@ -856,23 +862,21 @@ void *thf_exit(void *data){
 
         /* Trigger LPR */
         trig_LPR(&exit->LPR, popped_car);
-        printf("Exit LPR triggered with: %s\n", popped_car->plate); fflush(stdout);
     
         /* Raise boom gate */
         while( sim_gates(&exit->gate) != 'O'){}
-        printf("Exit gates rising\n"); fflush(stdout);
 
         /* Remove car from simulation */
         destroy_car(popped_car);
 
         /* Close boom gate */
-        printf("Exit gates closing\n"); fflush(stdout);
         while( sim_gates(&exit->gate) != 'C');
-        printf("Exit gates closed\n"); fflush(stdout);
-
-        
 
         /* Repeat with next cars in queue */
+        /* Check whether thread should continue */
+        pthread_mutex_lock(&input_lock);
+        local_input = user_input;
+        pthread_mutex_unlock(&input_lock);
     }
         return NULL;
 }
@@ -886,10 +890,8 @@ int main(void){
         return EXIT_FAILURE;
     }
     shm_t *shm_ptr = &shm;
-
+ 
     init_shmvals(shm_ptr);
-    //printf("%p", shm_ptr);
-
     /* Create threads for simulator-based functions */
     pthread_t time_th;
     pthread_t creator_th;
@@ -933,15 +935,8 @@ int main(void){
         pthread_create(&exit_threads[i], NULL, thf_exit, (void *)&th_exitID[i]);
     }
     
-    // // /* Gain mutex lock of running variable */
-    // // pthread_mutex_lock(&run_lock);
-    // // while(running == true){
-    // //     /* Release lock of running bool variable */
-    // //     pthread_mutex_unlock(&run_lock); 
-    // //     check_user_input();
-    // //     /* Gain mutex lock of running variable */
-    // //     pthread_mutex_lock(&run_lock);
-    // // }
+    
+    check_user_input();
 
 
 
@@ -962,6 +957,9 @@ int main(void){
     pthread_join(time_th, NULL);
     pthread_join(creator_th, NULL);
     pthread_join(inside_th, NULL);
+
+    printf("All threads rejoined, simulator is done\nOver to you firealarm!\n");
+    fflush(stdout);
 
 
 
