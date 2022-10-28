@@ -203,8 +203,8 @@ void emergency_mode(void)
 	// Show evacuation message on an endless loop
 	do { // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- FIXED BY HAVING EXIT KEY PROGRAMMED
 		pthread_mutex_unlock(&alarm_mutex);
-		char *evacmessage = "EVACUATE ";
-		for (char *p = evacmessage; *p != '\0'; p++) {
+		const char *evacmessage = "EVACUATE ";
+		for (const char *p = evacmessage; *p != '\0'; p++) {
 			for (int i = 0; i < ENTRANCES; i++) {
 				int addr = 288 * i + 192;
 				struct parkingsign *sign = (void*)&shm + addr;

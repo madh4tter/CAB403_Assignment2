@@ -22,3 +22,4 @@ Assignment2Sec-cppcheck-build-dir/statistics.txt
 misra_violations.txt.xml
 firealarm.exe
 Assignment2Sec.cppcheck
+OLD_FIRE.c
