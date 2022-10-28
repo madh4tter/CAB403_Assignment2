@@ -71,7 +71,7 @@ void tempmonitor(int level)
 	struct tempnode *medianlist = NULL;
 	struct tempnode *oldesttemp = NULL;
 	int count = 0;
-	int addr = 0;
+	int temp_addr = 0;
 	int temp = 0;
 	int mediantemp = 0;
 	int hightemps = 0;
@@ -85,8 +85,9 @@ void tempmonitor(int level)
 																					// This can only be changed by resetting the whole system.
 		pthread_mutex_unlock(&alarm_mutex);
 		// Calculate address of temperature sensor
-		addr = 104 * level + 2496; // Changed octal to integer...
-		temp = (int)(uintptr_t)&shm + addr;
+		temp_addr = (104 * level) + 2496; // Changed octal to integer...
+		int shm_addr = (int)(uintptr_t)&shm;
+		temp = shm_addr + temp_addr;
 		
 		// Add temperature to beginning of linked list
 		newtemp = malloc(sizeof(struct tempnode));
@@ -182,21 +183,24 @@ void emergency_mode(void)
 	// Handle the alarm system and open boom gates
 	// Activate alarms on all levels
 	for (int i = 0; i < LEVELS; i++) {
-		int addr = 104 * i + 2498; // Octal use not allowed, changed to integer scalar
-		char *alarm_trigger = (char *)&shm + addr;
+		int lvl_addr = (104 * i) + 2498; // Octal use not allowed, changed to integer scalar
+		char *shm_char = (char *)&shm;
+		char *alarm_trigger = shm_char + lvl_addr;
 		*alarm_trigger = 1;
 	}
 	
 	// Open up all boom gates
 	pthread_t *boomgatethreads = malloc(sizeof(pthread_t) * (ENTRANCES + EXITS));
 	for (int i = 0; i < ENTRANCES; i++) {
-		int addr = 288 * i + 96;
-		struct boomgate *bg = (void*)&shm + addr;
+		int ent_addr = (288 * i) + 96;
+		void *shm_void_entrance = (void*)&shm;
+		struct boomgate *bg = shm_void_entrance + ent_addr;
 		pthread_create(boomgatethreads + i, NULL, openboomgate, &bg);
 	}
 	for (int i = 0; i < EXITS; i++) {
-		int addr = 192 * i + 1536;
-		struct boomgate *bg = (void*)&shm + addr;
+		int exit_addr = (192 * i) + 1536;
+		void *shm_void_exit = (void*)&shm;
+		struct boomgate *bg = shm_void_exit + exit_addr;
 		pthread_create(boomgatethreads + ENTRANCES + i, NULL, openboomgate, &bg);
 	}
 	
@@ -206,8 +210,9 @@ void emergency_mode(void)
 		const char *evacmessage = "EVACUATE ";
 		for (const char *p = evacmessage; *p != '\0'; p++) {
 			for (int i = 0; i < ENTRANCES; i++) {
-				int addr = 288 * i + 192;
-				struct parkingsign *sign = (void*)&shm + addr;
+				int sign_addr = (288 * i) + 192;
+				void *shm_void_sign = (void*)&shm;
+				struct parkingsign *sign = shm_void_sign + sign_addr;
 				pthread_mutex_lock(&sign->parking_mutex);
 				sign->parking_display = *p;
 				pthread_cond_broadcast(&sign->parking_cond);
