@@ -299,12 +299,12 @@ void *thf_temp(void *ptr)
     int wait;
 
     while(1){
-        pthread_mutex_lock(&rand_lock);
-        random_index = rand() % 3;
-        wait = (rand() % 4) +1;
-        pthread_mutex_unlock(&rand_lock);
-        //usleep(wait *1000);
-        sleep(1);
+        pthread_mutex_lock(&runtime.lock);
+        random_index = runtime.elapsed % 4;
+        wait = (runtime.elapsed % 4) + 1;
+        pthread_mutex_unlock(&runtime.lock);
+        usleep(wait *10000);
+        //usleep(100000);
 
         int random_change = change[random_index];
         for (int i = 0; i < LEVELS; i++)
@@ -322,7 +322,7 @@ void *thf_temp(void *ptr)
                 shm_ptr->data->levels[i].temp += random_change; 
             }
         }
-        //printf("%d\n", shm_ptr->data->levels[0].temp);
+        printf("%d\n", shm_ptr->data->levels[0].temp);
         fflush(stdout);
     }
     return ptr;
@@ -366,40 +366,47 @@ void fixed_temp()
 }
 
 
-char check_user_input(void)
+char check_user_input(pthread_t temp_th)
 {
     char user_input = getchar();
     char ret;
-    char alarm_check = 0;
+    char alarm_check = '0';
     shm_t *shm_ptr = &shm;
 
     switch(user_input){
         case 'r':
+            printf("Running Rate of Rise Simulation\n"); 
+            fflush(stdout);
+            pthread_cancel(temp_th);            
             rate_of_rise(shm_ptr);
-            while(alarm_check != 1){
+            while(alarm_check != '1'){
                 for(int i = 0; i < LEVELS; i++){
-                    if(shm_ptr->data->levels[i].alarm == 1){
-                        alarm_check = 1;
+                    if(shm_ptr->data->levels[i].alarm == '1'){
+                        alarm_check = '1';
                     }
                 }
             }
 
             ret = 'a';
-            printf("Running Rate of Rise Simulation\n"); 
-            fflush(stdout);
             break;
         case 'f':
-            fixed_temp(shm_ptr);
-            while(alarm_check != 1){
-                for(int i = 0; i < LEVELS; i++){
-                    if(shm_ptr->data->levels[i].alarm == 1){
-                        alarm_check = 1;
-                    }
-                }
-            }            
-            ret = 'a';
             printf("Running Fixed Temperature Simulation\n"); 
             fflush(stdout);
+            pthread_cancel(temp_th);
+            fixed_temp(shm_ptr);
+            printf("Fixed temp reached: %d\n", shm_ptr->data->levels[0].temp);
+            fflush(stdout);
+            while(alarm_check != '1'){
+                for(int i = 0; i < LEVELS; i++){
+                    if(shm_ptr->data->levels[i].alarm == '1'){
+                        alarm_check = '1';
+                    }
+                }
+            }
+            printf("Alarm sounding!");
+            fflush(stdout);            
+            ret = 'a';
+
             break;
         case 'e':
             ret = 'e';
@@ -407,8 +414,9 @@ char check_user_input(void)
             fflush(stdout);
             break;
         default:
-            fixed_temp(shm_ptr);
             printf("Default Alarm Sounding\n");
+            fflush(stdout);
+            fixed_temp(shm_ptr);
             ret = 'a';
             break;
     }
@@ -905,7 +913,8 @@ int main(void){
         return EXIT_FAILURE;
     }
     shm_t *shm_ptr = &shm;
- 
+ 	printf("shm_t addr %p", &shm_ptr->data);
+
     init_shmvals(shm_ptr);
     /* Create threads for simulator-based functions */
     pthread_t time_th;
@@ -955,7 +964,7 @@ int main(void){
     }
     
     
-    char local_input = check_user_input();
+    char local_input = check_user_input(temp_th);
 
 
     switch (local_input) {
