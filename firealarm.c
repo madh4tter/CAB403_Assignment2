@@ -15,10 +15,6 @@
 
 
 
-/* I've put your firealarm.h stuff in here because the compiling doesn't seem to work
-otherwise. You can put this in a new .h file if you want, 
-just needs to be under a different name */
-int shm_fd = 0;
 shm_t shm;
 
 
@@ -27,7 +23,6 @@ char alarm_active = '0';
 pthread_mutex_t alarm_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t alarm_condvar = PTHREAD_COND_INITIALIZER;
 
-pthread_t *fthreads;
 
 #define MEDIAN_WINDOW 5
 #define TEMPCHANGE_WINDOW 30
@@ -78,11 +73,11 @@ void tempmonitor(int level)
 	int temp = 0;
 	int mediantemp = 0;
 	int hightemps = 0;
+	char local_check = '0';
 
 
-	while(alarm_active == '0'){ // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- Fixed by changing it to only monitoring while the alarm is not active. Once the alarm is active, the system goes into 'alarm mode'. 
+	while(local_check == '0'){ // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- Fixed by changing it to only monitoring while the alarm is not active. Once the alarm is active, the system goes into 'alarm mode'. 
 																					// This can only be changed by resetting the whole system.
-		pthread_mutex_unlock(&alarm_mutex);
 		// Calculate address of temperature sensor
 		// temp_addr = (104 * level) + 2496; // Changed octal to integer...
 		// int shm_addr = (int)(uintptr_t)shm_ptr;
@@ -158,85 +153,114 @@ void tempmonitor(int level)
 		usleep(2000);
 		pthread_mutex_lock(&alarm_mutex);
 		alarm_active = shm_ptr->data->levels[level].alarm;
+		local_check = alarm_active;
+		pthread_mutex_unlock(&alarm_mutex);
 		}
 	}
 }
 
-void *openboomgate(void *arg) // !!NASA Power of 10: #9 (Function pointers are not allowed)
+void openboomgate(void *arg) // !!NASA Power of 10: #9 (Function pointers are not allowed)
 {
-	struct boomgate *boom_gate = arg;
-	pthread_mutex_lock(&boom_gate->boom_mutex);
-	while(boom_gate->boom_char != 'O') { // !!NASA Power of 10: #2 (loops have fixed bounds)!! Thread now waits till the gate is open, then leaves it. Once it's done, it unlocks. 
-		if (boom_gate->boom_char == 'C') {
-			boom_gate->boom_char = 'R';
-			pthread_cond_broadcast(&boom_gate->boom_cond);
+	/* Wait to ensure all threads receive the message */
+	//usleep(1000); 
+	/* Correction of variable type */
+	gate_t *boom_gate = (gate_t *)arg;
+	pthread_mutex_lock(&boom_gate->lock);
+	while(boom_gate->status != 'O') { // !!NASA Power of 10: #2 (loops have fixed bounds)!! Thread now waits till the gate is open, then leaves it. Once it's done, it unlocks. 
+		if (boom_gate->status == 'C') {
+			boom_gate->status = 'R';
+			pthread_mutex_unlock(&boom_gate->lock);
+			pthread_cond_broadcast(&boom_gate->cond);
 		}
-		pthread_cond_wait(&boom_gate->boom_cond, &boom_gate->boom_mutex);
+		pthread_mutex_lock(&boom_gate->lock);
+		pthread_cond_wait(&boom_gate->cond, &boom_gate->lock);
 	} 
-	pthread_mutex_unlock(&boom_gate->boom_mutex);
-	return arg; 
+	/* Keep it locked so that no one else can edit the value as a safety feature */
+	pthread_mutex_unlock(&boom_gate->lock); 
+}
+
+void evac_msg(void *arg){
+	/* Correction of variable type */
+	screen_t *screen = (screen_t *)arg;
+	shm_t *shm_ptr = &shm;
+	char local_check = '1';
+
+	printf("Showing EVACUATE on screens\n"); fflush(stdout);
+
+	do { // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- FIXED BY HAVING EXIT KEY PROGRAMMED
+		pthread_mutex_unlock(&alarm_mutex);
+		const char *evacmessage = "EVACUATE ";
+		for (const char *p = evacmessage; *p != '\0'; p++) {
+			pthread_mutex_lock(&screen->lock);
+			screen->display = *p;
+			pthread_mutex_unlock(&screen->lock);
+			pthread_cond_broadcast(&screen->cond);
+			usleep(20000);
+		}
+		pthread_mutex_lock(&alarm_mutex);
+		for(int i = 0; i < LEVELS; i++){
+			char alarm_active_check = shm_ptr->data->levels[i].alarm;
+			if(alarm_active_check == '0'){
+				alarm_active = '0';
+				local_check = alarm_active;				
+			}
+		}
+	} while(local_check == '1');
 }
 
 void emergency_mode(void)
 {
 	shm_t *shm_ptr = &shm;
 
-	// char key = NULL;
 	fprintf(stderr, "*** ALARM ACTIVE ***\n");
 	
 	// Handle the alarm system and open boom gates
 	// Activate alarms on all levels
 	for (int i = 0; i < LEVELS; i++) {
-		// int lvl_addr = (104 * i) + 2498; // Octal use not allowed, changed to integer scalar
-		// char *shm_char = (char *)shm_ptr;
-		// char *alarm_trigger = shm_char + lvl_addr;
 		shm_ptr->data->levels[i].alarm = '1';
 		printf("Alarms activated\n");
-		//alarm_trigger = 1;
 	}
 	
-	// Open up all boom gates
-	pthread_t *boomgatethreads = malloc(sizeof(pthread_t) * (ENTRANCES + EXITS));
+	pthread_t screens_th[ENTRANCES];
+	pthread_t entrboom_th[ENTRANCES];
+	pthread_t exitboom_th[EXITS];
+	gate_t *gate_addr;
+	screen_t *screen_addr;
+
+	/* Open up all boom gates */
 	for (int i = 0; i < ENTRANCES; i++) {
-		int ent_addr = (288 * i) + 96;
-		void *shm_void_entrance = (void*)shm_ptr;
-		struct boomgate *bg = shm_void_entrance + ent_addr;
-		pthread_create(boomgatethreads + i, NULL, openboomgate, &bg);
+		gate_addr = &shm_ptr->data->entrances[i].gate;
+		//pthread_mutex_unlock(&gate_addr->lock);
+		if(pthread_create(&entrboom_th[i], NULL, (void *)openboomgate, gate_addr) != 0){
+			printf("Failed to create threads\n"); fflush(stdout);
+		}
 	}
 	for (int i = 0; i < EXITS; i++) {
-		int exit_addr = (192 * i) + 1536;
-		void *shm_void_exit = (void*)shm_ptr;
-		struct boomgate *bg = shm_void_exit + exit_addr;
-		pthread_create(boomgatethreads + ENTRANCES + i, NULL, openboomgate, &bg);
+		gate_addr = &shm_ptr->data->exits[i].gate;
+		//pthread_mutex_unlock(&gate_addr->lock);
+		if(pthread_create(&exitboom_th[i], NULL, (void *)openboomgate, gate_addr) != 0){
+			printf("Failed to create threads\n"); fflush(stdout);
+		}
 	}
 	
-	// Show evacuation message on an endless loop
-	do { // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- FIXED BY HAVING EXIT KEY PROGRAMMED
-		pthread_mutex_unlock(&alarm_mutex);
-		const char *evacmessage = "EVACUATE ";
-		for (const char *p = evacmessage; *p != '\0'; p++) {
-			for (int i = 0; i < ENTRANCES; i++) {
-				int sign_addr = (288 * i) + 192;
-				void *shm_void_sign = (void*)shm_ptr;
-				struct parkingsign *sign = shm_void_sign + sign_addr;
-				pthread_mutex_lock(&sign->parking_mutex);
-				sign->parking_display = *p;
-				pthread_cond_broadcast(&sign->parking_cond);
-				pthread_mutex_unlock(&sign->parking_mutex);
-			}
-			usleep(20000);
-			// key = getchar(); // Old idea, would reset once the 'q' key is pressed. Updated to only reset when alarm_active is reset. This can be handled by a controller program. 
+	/* Create threads to show evacutaion message on every screen */
+	for (int i = 0; i < ENTRANCES; i++) {
+		screen_addr = &shm_ptr->data->entrances[i].screen;
+		pthread_mutex_unlock(&screen_addr->lock);
+		if(pthread_create(&screens_th[i], NULL, (void *)evac_msg, screen_addr) != 0){
+			printf("Failed to create threads\n"); fflush(stdout);
 		}
-		pthread_mutex_lock(&alarm_mutex);
-		for(int i = 0; i < LEVELS; i++){
-			char alarm_active_check = shm_ptr->data->levels[i].alarm;
-			if(alarm_active_check){alarm_active = '1'; break;}
-		}
-	} while(alarm_active == '1');
-	
-	for (int i = 0; i < LEVELS; i++) {
-		pthread_join(fthreads[i], NULL);
 	}
+
+	/* Wait for emergency threads to finish */
+	for (int i = 0; i < EXITS; i++) {
+		pthread_join(exitboom_th[i], NULL);
+	}
+	for (int i = 0; i < ENTRANCES; i++) {
+		pthread_join(entrboom_th[i], NULL);
+		pthread_join(screens_th[i], NULL);
+	}
+
 }
 
 
@@ -245,38 +269,27 @@ int main(void) // Must have input declarations -- added 'void' input.
 	if (get_shared_object(&shm, SHARE_NAME) == 0){
 		printf("Failed to get memory");
 	}
-	shm_t *shm_ptr = &shm;
-
-	printf("shm_t addr %p", shm_ptr->data);
-	fflush(stdout);
-	shm_fd = shm_open("PARKING", O_RDWR, 0);
 	
-	fthreads = malloc(sizeof(pthread_t) * LEVELS);
+	pthread_t fthreads[LEVELS];
 	
 	for (int i = 0; i < LEVELS; i++) {
-		pthread_create(fthreads + i, NULL, (void *) tempmonitor, (int *)(uintptr_t)i);
+		pthread_create(&fthreads[i], NULL, (void *) tempmonitor, (int *)(uintptr_t)i);
 	}
 
-	// while(alarm_active == 0){ // This will block the pthread alarm mutex, need better soln; This unlocks, waits for 1sec, then locks and checks alarm variable
-	// 	pthread_mutex_unlock(&alarm_mutex);
-	// 	usleep(1000);
-	// 	pthread_mutex_lock(&alarm_mutex);
-	// }
 	pthread_mutex_lock(&alarm_mutex);
-
 	pthread_cond_wait(&alarm_condvar, &alarm_mutex);
-
 	pthread_mutex_unlock(&alarm_mutex);
 
 	emergency_mode();
 
+	for (int i = 0; i < LEVELS; i++) {
+		pthread_join(fthreads[i], NULL);
+	}
+
 	destroy_shared_object(&shm);
-	// for (;;) { // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- FIXED
-	// 	if (alarm_active) {
-	// 		emergency_mode(); // !!NASA Power of 10: #1 (Avoid complex flow constructs, like goto)!! -- FIXED
-	// 	}
-	// 	usleep(1000);
-	// }
+
+
+
 
 	
 	return 0;
