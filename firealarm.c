@@ -135,7 +135,7 @@ void tempmonitor(int level)
 				// If 90% of the last 30 temperatures are >= 58 degrees,
 				// this is considered a high temperature. Raise the alarm
 				if (hightemps >= TEMPCHANGE_WINDOW * 0.9){
-					printf("Rate of Rise Recognised\n");
+					printf("Fixed Temp Recognised\n");
 					fflush(stdout);
 					pthread_cond_broadcast(&alarm_condvar);
 				}
@@ -143,8 +143,8 @@ void tempmonitor(int level)
 				// If the newest temp is >= 8 degrees higher than the oldest
 				// temp (out of the last 30), this is a high rate-of-rise.
 				// Raise the alarm
-				if (templist->temperature - oldesttemp->temperature >= 8){
-					printf("Fixed Temp Recognised\n");
+				if ((templist->temperature - oldesttemp->temperature) >= 8){
+					printf("Rate of Rise Recognised\n");
 					fflush(stdout);
 					pthread_cond_broadcast(&alarm_condvar);
 				}

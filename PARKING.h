@@ -33,10 +33,10 @@
 
 
 /* Define characteristics of car-park */
-#define ENTRANCES 1
-#define EXITS 1
-#define LEVELS 1
-#define LEVEL_CAPACITY 5
+#define ENTRANCES 5
+#define EXITS 5
+#define LEVELS 5
+#define LEVEL_CAPACITY 20
 
 
 

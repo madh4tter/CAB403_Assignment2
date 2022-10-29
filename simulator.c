@@ -153,6 +153,7 @@ qnode_t *qnode_push(qnode_t *head, node_t *queue){
 
 
 
+
 /*************************** SHARED MEMORY METHODS *********************************/
 
 void init_conds(shm_t* shm){
@@ -334,13 +335,21 @@ void rate_of_rise()
     pthread_mutex_lock(&rand_lock);
     int choose = rand() % LEVELS;
     pthread_mutex_unlock(&rand_lock);
-    
-    for(int i = 0; i < LEVELS; i++)
-    {
-        if (choose == i)
-        {
-            shm_ptr->data->levels[i].temp += change; 
+    char alarm_check = '0';
+
+    printf("Temp before fire is %d\n", shm_ptr->data->levels[0].temp);
+    fflush(stdout);
+
+    while(alarm_check != '1'){
+        for(int i = 0; i < LEVELS; i++) {
+            if (choose == i) {
+                shm_ptr->data->levels[i].temp += change; 
+            }
+            if(shm_ptr->data->levels[i].alarm == '1'){
+                alarm_check = '1';
+            }
         }
+        usleep(1000);
     }
 }
 
@@ -352,13 +361,19 @@ void fixed_temp()
     pthread_mutex_lock(&rand_lock);
     int choose = rand() % LEVELS;
     pthread_mutex_unlock(&rand_lock);
+
+    char alarm_check = '0';
     
-    for(int i = 0; i < LEVELS; i++)
-    {
-        if (choose == i)
-        {
+    while(alarm_check != '1'){
+        for(int i = 0; i < LEVELS; i++){
+            if (choose == i){
             shm_ptr->data->levels[i].temp = large_temp; 
+            }
+            if(shm_ptr->data->levels[i].alarm == '1'){
+                alarm_check = '1';
+            }
         }
+        usleep(1000);
     }
 }
 
@@ -367,8 +382,8 @@ char check_user_input(pthread_t temp_th)
 {
     char user_input = getchar();
     char ret;
-    char alarm_check = '0';
     shm_t *shm_ptr = &shm;
+    
 
     switch(user_input){
         case 'r':
@@ -376,34 +391,14 @@ char check_user_input(pthread_t temp_th)
             fflush(stdout);
             pthread_cancel(temp_th);            
             rate_of_rise(shm_ptr);
-            while(alarm_check != '1'){
-                for(int i = 0; i < LEVELS; i++){
-                    if(shm_ptr->data->levels[i].alarm == '1'){
-                        alarm_check = '1';
-                    }
-                }
-            }
-
             ret = 'a';
             break;
         case 'f':
             printf("Running Fixed Temperature Simulation\n"); 
             fflush(stdout);
             pthread_cancel(temp_th);
-            fixed_temp(shm_ptr);
-            printf("Fixed temp reached: %d\n", shm_ptr->data->levels[0].temp);
-            fflush(stdout);
-            while(alarm_check != '1'){
-                for(int i = 0; i < LEVELS; i++){
-                    if(shm_ptr->data->levels[i].alarm == '1'){
-                        alarm_check = '1';
-                    }
-                }
-            }
-            printf("*** ALARM ACTIVE ***\n");
-            fflush(stdout);            
+            fixed_temp(shm_ptr);          
             ret = 'a';
-
             break;
         case 'e':
             ret = 'e';
@@ -550,7 +545,6 @@ void *thf_creator(void *ptr){
         int wait = (rand() % 99) + 1;
         usleep(wait * 1000);
         pthread_mutex_unlock(&rand_lock);
-        //sleep(1);
 
         /* create car */
         car_t *new_car = malloc(sizeof(car_t));
@@ -694,8 +688,7 @@ void *thf_entr(void *data){
         pthread_cond_wait(&entrance->screen.cond, &entrance->screen.lock);
         char_lvl = entrance->screen.display;
         pthread_mutex_unlock(&entrance->screen.lock);
-        assigned_lvl = (int)char_lvl - 48;
-        
+        assigned_lvl = (int)char_lvl - 48 -1;
         if(!(assigned_lvl >= 0 && assigned_lvl <= (ENTRANCES-1))){
             /* Remove car from simulation */
             destroy_car(popped_car);
@@ -705,7 +698,7 @@ void *thf_entr(void *data){
         
             /* Raise boom gate */
             while( sim_gates(&entrance->gate) != 'O'){}
-        
+
             /* Assign leaving time to car */
             pthread_mutex_lock(&rand_lock);
             leave_time = (rand() % 9900) + 100;
@@ -950,6 +943,8 @@ int main(void){
 
     switch (local_input) {
         case 'a':
+            printf("*** ALARM ACTIVE ***\n");
+            fflush(stdout); 
             /* Cancel existing threads */
             pthread_cancel(time_th);
             pthread_cancel(creator_th);
@@ -964,6 +959,21 @@ int main(void){
             for (int i = 0; i < EXITS; i++)
             {
                 pthread_cancel(exit_threads[i]);
+            }
+
+            /* Unlock all mutexes */
+            pthread_cancel(time_th);
+            for (int i = 0; i < ENTRANCES; i++) {
+                pthread_mutex_unlock(&shm_ptr->data->entrances[i].gate.lock);
+                pthread_mutex_unlock(&shm_ptr->data->entrances[i].screen.lock);
+                pthread_mutex_unlock(&shm_ptr->data->entrances[i].LPR.lock);
+            }
+            for (int i = 0; i < EXITS; i++) {
+                pthread_mutex_unlock(&shm_ptr->data->exits[i].gate.lock);
+                pthread_mutex_unlock(&shm_ptr->data->exits[i].LPR.lock);
+            }
+            for (int i = 0; i < LEVELS; i++) {
+                pthread_mutex_unlock(&shm_ptr->data->levels[i].LPR.lock);
             }
 
             printf("Threads cancelled\n"); fflush(stdout);

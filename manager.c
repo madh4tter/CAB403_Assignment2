@@ -32,6 +32,8 @@ htab_t htab;
 shm_t shm;
 FILE *fp;
 
+int level_tracker[LEVELS] = {0};
+
 //* Thread function to keep track of time in ms*/
 void *thf_time(void *ptr){
     struct timespec start, end;
@@ -81,48 +83,33 @@ void htab_create(void)
 }
 
 // Enternce of Car Park //////////////////////////////////////////////////////////
-
-int car_count_level(node_t *head) /* Counts the amount of cars per level */
+char car_count() 
 {
-    int counter[LEVELS];
-    int holder;
-    for (; head != NULL; head = head->next)
-    {
-        holder = atoi(head->vehicle->level);
-        counter[holder]++;
-    }
-    return counter[LEVELS];
-}
-
-char level_assign(int car_count[LEVELS]) /* Assign car to level*/
-{
-    int min = 0;
-    for (int i = 0; i > LEVELS; i++)
-    {
-        if(car_count[i] < car_count[min])
-        {
-            min = i;
-        }
-    }
-
-    char level_char = min + '0'; /* Convert to char */
-
-    return level_char;
+    int next_level = m_counter % LEVELS;
+    level_tracker[next_level]++;
+    //next_level++;
+    char level = next_level + '0'; 
+    return level;
 }
 
 // Boomgates //////////////////////////////////////////////////////////////////////
-void m_sim_gates(gate_t *gate)
+void m_sim_gates(gate_t *gate) 
 {
-   pthread_mutex_lock(&gate->lock);
-   if(gate->status == 'C'){
+    usleep(1000);
+    pthread_mutex_lock(&gate->lock);
+    if(gate->status == 'C'){
     gate->status = 'R';
+    pthread_mutex_unlock(&gate->lock);
     pthread_cond_broadcast(&gate->cond);
+    pthread_mutex_lock(&gate->lock);
     while(gate->status != 'O'){
         pthread_cond_wait(&gate->cond, &gate->lock);
     }
     usleep(20*1000);
     gate->status = 'L';
+    pthread_mutex_unlock(&gate->lock);
     pthread_cond_broadcast(&gate->cond);
+    pthread_mutex_lock(&gate->lock);
     while(gate->status != 'C'){
         pthread_cond_wait(&gate->cond, &gate->lock);
     }
@@ -134,7 +121,6 @@ void m_sim_gates(gate_t *gate)
 
 void entrance_lpr(entrance_t *ent)
 {
-    int car_count_levels[LEVELS];
     char holder[6];
     char assign_level;
     node_t* find = NULL;
@@ -157,14 +143,13 @@ void entrance_lpr(entrance_t *ent)
             if (m_counter < (LEVELS * LEVEL_CAPACITY))
             {
                 m_counter++;
-                pthread_mutex_unlock(&car_park_lock);
+                assign_level = car_count();
 
-                car_count_levels[LEVELS] = car_count_level(car_list);
-                assign_level = level_assign(car_count_levels);
+                pthread_mutex_unlock(&car_park_lock);
 
                 usleep(2000);
                 pthread_mutex_lock(&ent->screen.lock);
-                ent->screen.display = assign_level; /* Sceen show level value */
+                ent->screen.display = assign_level + 1; /* Sceen show level value */
                 pthread_mutex_unlock(&ent->screen.lock);
                 pthread_cond_broadcast(&ent->screen.cond);
 
@@ -291,19 +276,16 @@ void get_entry(){
 	for(int i = 0; i < ENTRANCES; i++){
 		/* lpr status */
 		pthread_mutex_lock(&shm_ptr->data->entrances[i].LPR.lock);
-        // printf("Passed LPR"); fflush(stdout);
 		plate_num = shm_ptr->data->entrances[i].LPR.plate;
 		pthread_mutex_unlock(&shm_ptr->data->entrances[i].LPR.lock);
 
 		/* gate status */
 		pthread_mutex_lock(&shm_ptr->data->entrances[i].gate.lock);
-        // printf("Passed Gate"); fflush(stdout);
 		bg_status = shm_ptr->data->entrances[i].gate.status;
 		pthread_mutex_unlock(&shm_ptr->data->entrances[i].gate.lock);
 
 		/* info screen */
 		pthread_mutex_lock(&shm_ptr->data->entrances[i].screen.lock);
-        // printf("Passed screen"); fflush(stdout);
 		sign_display = shm_ptr->data->entrances[i].screen.display;
 		pthread_mutex_unlock(&shm_ptr->data->entrances[i].screen.lock);
 
@@ -329,7 +311,6 @@ void get_exit(){
 		pthread_mutex_lock(&shm_ptr->data->exits[i].LPR.lock);
 		plate_num = shm_ptr->data->exits[i].LPR.plate;
 		pthread_mutex_unlock(&shm_ptr->data->exits[i].LPR.lock);
-
 		/* gate status */
 		pthread_mutex_lock(&shm_ptr->data->exits[i].gate.lock);
 		bg_status = shm_ptr->data->exits[i].gate.status;
@@ -570,10 +551,10 @@ int main(void)
         usleep(1000);
         }
     }
-    pthread_cancel(display_th);
 
     /* End all existing threads except display*/
     pthread_cancel(time_th);
+    pthread_cancel(display_th);
     for (int i = 0; i < ENTRANCES; i++) {
         pthread_cancel(enter_thread[i]);
     }
@@ -584,9 +565,24 @@ int main(void)
         pthread_cancel(level_thread[i]);
     }
 
+    /* Unlock all mutexes */
+    pthread_cancel(time_th);
+    for (int i = 0; i < ENTRANCES; i++) {
+        pthread_mutex_unlock(&shm_ptr->data->entrances[i].gate.lock);
+        pthread_mutex_unlock(&shm_ptr->data->entrances[i].screen.lock);
+        pthread_mutex_unlock(&shm_ptr->data->entrances[i].LPR.lock);
+    }
+    for (int i = 0; i < EXITS; i++) {
+        pthread_mutex_unlock(&shm_ptr->data->exits[i].gate.lock);
+        pthread_mutex_unlock(&shm_ptr->data->exits[i].LPR.lock);
+    }
+    for (int i = 0; i < LEVELS; i++) {
+        pthread_mutex_unlock(&shm_ptr->data->levels[i].LPR.lock);
+    }
 
+    pthread_create(&display_th, NULL, thf_display, NULL);
 
-
+    pthread_join(display_th, NULL);
 
     printf("got to here okay\n"); fflush(stdout);
     // // Clean up everything
