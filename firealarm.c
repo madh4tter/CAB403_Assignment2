@@ -44,7 +44,7 @@ struct tempnode {
 	struct tempnode *next;
 };
 
-struct tempnode *deletenodes(struct tempnode *templist, int after) // !!NASA Power of 10: #9 (Function pointers are not allowed)
+struct tempnode *deletenodes(struct tempnode *templist, int after)
 {
 	if (templist->next) {
 		templist->next = deletenodes(templist->next, after - 1);
@@ -69,37 +69,37 @@ void tempmonitor(int level)
 	struct tempnode *medianlist = NULL;
 	struct tempnode *oldesttemp = NULL;
 	int count = 0;
-	//int temp_addr = 0;
 	int temp = 0;
 	int mediantemp = 0;
 	int hightemps = 0;
 	char local_check = '0';
 
 
-	while(local_check == '0'){ // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- Fixed by changing it to only monitoring while the alarm is not active. Once the alarm is active, the system goes into 'alarm mode'. 
-																					// This can only be changed by resetting the whole system.
-		// Calculate address of temperature sensor
-		// temp_addr = (104 * level) + 2496; // Changed octal to integer...
-		// int shm_addr = (int)(uintptr_t)shm_ptr;
-		// temp = shm_addr + temp_addr;
+	while(local_check == '0'){ 
+	/*  NASA Power of 10: #2 (loops have fixed bounds)
+		Fixed by changing it to only monitoring while the alarm is not active. Once the alarm is active, the system goes into 'alarm mode'. 
+		This can only be changed by resetting the whole system.  */
+		
+		/* Temperature address gathered from shared memory pointer */
 		temp = shm_ptr->data->levels[level].temp;
 		
-		// Add temperature to beginning of linked list
+		/* Add temperature to beginning of linked list */
 		newtemp = malloc(sizeof(struct tempnode));
 		newtemp->temperature = temp;
 		newtemp->next = templist;
 		templist = newtemp;
 		
-		// Delete nodes after 5th
+		/* Delete nodes after 5th  */
 		deletenodes(templist, MEDIAN_WINDOW);
 		
-		// Count nodes
+		/*  Count nodes  */
 		count = 0;
 		for (struct tempnode *t = templist; t != NULL; t = t->next) {
 			count++;
 		}
 		
-		if (count == MEDIAN_WINDOW) { // Temperatures are only counted once we have 5 samples
+		if (count == MEDIAN_WINDOW) { 
+			/*  Temperatures are only counted once we have 5 samples  */
 			int *sorttemp = malloc(sizeof(int) * MEDIAN_WINDOW);
 			count = 0;
 			for (struct tempnode *t = templist; t != NULL; t = t->next) {
@@ -110,39 +110,39 @@ void tempmonitor(int level)
 			mediantemp = sorttemp[(MEDIAN_WINDOW - 1) / 2];
 
 			
-			// Add median temp to linked list
+			/*  Add median temp to linked list  */
 			newtemp = malloc(sizeof(struct tempnode));
 			newtemp->temperature = mediantemp;
 			newtemp->next = medianlist;
 			medianlist = newtemp;
-			
-			// Delete nodes after 30th
+			 
+			/*  Delete nodes after 30th  */
 			deletenodes(medianlist, TEMPCHANGE_WINDOW);
 			
-			// Count nodes
+			/*  Count nodes  */
 			count = 0;
 			hightemps = 0;
 			
 			for (struct tempnode *t = medianlist; t != NULL; t = t->next) {
-				// Temperatures of 58 degrees and higher are a concern
+				/*  Temperatures of 58 degrees and higher are a concern  */
 				if (t->temperature >= 58) hightemps++;
-				// Store the oldest temperature for rate-of-rise detection
+				/*  Store the oldest temperature for rate-of-rise detection  */
 				oldesttemp = t;
 				count++;
 			}
 			
 			if (count == TEMPCHANGE_WINDOW) {
-				// If 90% of the last 30 temperatures are >= 58 degrees,
-				// this is considered a high temperature. Raise the alarm
+				/*  If 90% of the last 30 temperatures are >= 58 degrees,
+					this is considered a high temperature. Raise the alarm  */
 				if (hightemps >= TEMPCHANGE_WINDOW * 0.9){
 					printf("Fixed Temp Recognised\n");
 					fflush(stdout);
 					pthread_cond_broadcast(&alarm_condvar);
 				}
 				
-				// If the newest temp is >= 8 degrees higher than the oldest
-				// temp (out of the last 30), this is a high rate-of-rise.
-				// Raise the alarm
+				/*  If the newest temp is >= 8 degrees higher than the oldest
+					temp (out of the last 30), this is a high rate-of-rise.
+					Raise the alarm  */
 				if ((templist->temperature - oldesttemp->temperature) >= 8){
 					printf("Rate of Rise Recognised\n");
 					fflush(stdout);
@@ -159,14 +159,16 @@ void tempmonitor(int level)
 	}
 }
 
-void openboomgate(void *arg) // !!NASA Power of 10: #9 (Function pointers are not allowed)
+void openboomgate(void *arg) 
 {
 	/* Wait to ensure all threads receive the message */
-	//usleep(1000); 
+	/* usleep(1000); 
 	/* Correction of variable type */
 	gate_t *boom_gate = (gate_t *)arg;
 	pthread_mutex_lock(&boom_gate->lock);
-	while(boom_gate->status != 'O') { // !!NASA Power of 10: #2 (loops have fixed bounds)!! Thread now waits till the gate is open, then leaves it. Once it's done, it unlocks. 
+	while(boom_gate->status != 'O') { 
+		/*  !!NASA Power of 10: #2 (loops have fixed bounds)!! 
+		Thread now waits till the gate is open, then leaves it. Once it's done, it unlocks.  */
 		if (boom_gate->status == 'C') {
 			boom_gate->status = 'R';
 			pthread_mutex_unlock(&boom_gate->lock);
@@ -187,7 +189,9 @@ void evac_msg(void *arg){
 
 	printf("Showing EVACUATE on screens\n"); fflush(stdout);
 
-	do { // !!NASA Power of 10: #2 (loops have fixed bounds)!! -- FIXED BY HAVING EXIT KEY PROGRAMMED
+	do { 
+		/*  !!NASA Power of 10: #2 (loops have fixed bounds)!! 
+			FIXED BY HAVING EXIT CHECK  */
 		pthread_mutex_unlock(&alarm_mutex);
 		const char *evacmessage = "EVACUATE ";
 		for (const char *p = evacmessage; *p != '\0'; p++) {
@@ -214,8 +218,8 @@ void emergency_mode(void)
 
 	fprintf(stderr, "*** ALARM ACTIVE ***\n");
 	
-	// Handle the alarm system and open boom gates
-	// Activate alarms on all levels
+	/*  Handle the alarm system and open boom gates
+		Activate alarms on all levels  */
 	for (int i = 0; i < LEVELS; i++) {
 		shm_ptr->data->levels[i].alarm = '1';
 		printf("Alarms activated\n");
@@ -230,14 +234,14 @@ void emergency_mode(void)
 	/* Open up all boom gates */
 	for (int i = 0; i < ENTRANCES; i++) {
 		gate_addr = &shm_ptr->data->entrances[i].gate;
-		//pthread_mutex_unlock(&gate_addr->lock);
+		/* pthread_mutex_unlock(&gate_addr->lock);  */
 		if(pthread_create(&entrboom_th[i], NULL, (void *)openboomgate, gate_addr) != 0){
 			printf("Failed to create threads\n"); fflush(stdout);
 		}
 	}
 	for (int i = 0; i < EXITS; i++) {
 		gate_addr = &shm_ptr->data->exits[i].gate;
-		//pthread_mutex_unlock(&gate_addr->lock);
+		/* pthread_mutex_unlock(&gate_addr->lock);  */
 		if(pthread_create(&exitboom_th[i], NULL, (void *)openboomgate, gate_addr) != 0){
 			printf("Failed to create threads\n"); fflush(stdout);
 		}
@@ -264,7 +268,9 @@ void emergency_mode(void)
 }
 
 
-int main(void) // Must have input declarations -- added 'void' input.
+int main(void) 
+/*  Must have input declarations 
+	added 'void' input.  */
 {
 	if (get_shared_object(&shm, SHARE_NAME) == 0){
 		printf("Failed to get memory");
@@ -288,9 +294,5 @@ int main(void) // Must have input declarations -- added 'void' input.
 
 	destroy_shared_object(&shm);
 
-
-
-
-	
 	return 0;
 }
