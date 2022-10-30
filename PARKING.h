@@ -36,7 +36,7 @@
 #define ENTRANCES 5
 #define EXITS 5
 #define LEVELS 5
-#define LEVEL_CAPACITY 20
+#define LEVEL_CAPACITY 10
 
 
 
@@ -84,7 +84,7 @@ typedef struct Level {
 
 /* Shared memory structure containing all memory for this program */
 typedef struct PARKING {
-    /// List of shared memory for each parking structure
+    /* List of shared memory for each parking structure */
     entrance_t entrances[ENTRANCES];
     exit_t exits[EXITS];
     level_t levels[LEVELS];
@@ -93,13 +93,13 @@ typedef struct PARKING {
 
 /* Shared memory object */
 typedef struct shared_memory {
-    // The name of the shared memory object.
+    /* The name of the shared memory object */
     const char* name;
 
-    /// The file descriptor used to manage the shared memory object.
+    /* The file descriptor used to manage the shared memory object */
     int fd;
 
-    /// Address of the shared data block. 
+    /* Address of the shared data block */
     PARKING_t* data;
 
 } shm_t;

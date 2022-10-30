@@ -88,3 +88,17 @@ node_t *node_delete(node_t *head, char *lp)
 
     return head;
 }
+
+node_t *delete_list(node_t *list, int after)
+{
+	if (list->next)
+    {
+		list->next = delete_list(list->next, after - 1);
+	}
+	if (after <= 0) 
+    {
+		free(list);
+		return NULL;
+	}
+	return list;
+}

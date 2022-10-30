@@ -404,6 +404,10 @@ char check_user_input(pthread_t temp_th)
             ret = 'e';
             printf("Simulator ending\n");
             fflush(stdout);
+            shm_ptr->data->levels[0].alarm = 'e';
+            break;
+        case '\n':
+            ret = 'n';
             break;
         default:
             printf("Default Alarm Sounding\n");
@@ -876,6 +880,29 @@ void thf_boomAlarm(void *arg){
     pthread_cond_broadcast(&boom_gate->cond);
 }
 
+node_t *deletenodes_node(node_t *car_list, int after)
+{
+	if (car_list->next) {
+		car_list->next = deletenodes_node(car_list->next, after - 1);
+	}
+	if (after <= 0) {
+		free(car_list);
+		return NULL;
+	}
+	return car_list;
+}
+
+qnode_t *deletenodes_qnode(qnode_t *q_list, int after)
+{
+	if (q_list->qnext) {
+		q_list->qnext = deletenodes_qnode(q_list->qnext, after - 1);
+	}
+	if (after <= 0) {
+		free(q_list);
+		return NULL;
+	}
+	return q_list;
+}
  
 /************************** MAIN ***********************************************/
 int main(void){
@@ -939,125 +966,130 @@ int main(void){
     }
     
     /* Check for user to send that they want to simulate a fire */
-    char local_input = check_user_input(temp_th);
-
-    switch (local_input) {
-        case 'a':
-            printf("*** ALARM ACTIVE ***\n");
-            fflush(stdout); 
-            /* Cancel existing threads */
-            pthread_cancel(time_th);
-            pthread_cancel(creator_th);
-            pthread_cancel(inside_th);
-            pthread_cancel(temp_th);
-
-            for (int i = 0; i < ENTRANCES; i++)
-            {
-                pthread_cancel(entr_threads[i]);
-            }
-
-            for (int i = 0; i < EXITS; i++)
-            {
-                pthread_cancel(exit_threads[i]);
-            }
-
-            /* Unlock all mutexes */
-            pthread_cancel(time_th);
-            for (int i = 0; i < ENTRANCES; i++) {
-                pthread_mutex_unlock(&shm_ptr->data->entrances[i].gate.lock);
-                pthread_mutex_unlock(&shm_ptr->data->entrances[i].screen.lock);
-                pthread_mutex_unlock(&shm_ptr->data->entrances[i].LPR.lock);
-            }
-            for (int i = 0; i < EXITS; i++) {
-                pthread_mutex_unlock(&shm_ptr->data->exits[i].gate.lock);
-                pthread_mutex_unlock(&shm_ptr->data->exits[i].LPR.lock);
-            }
-            for (int i = 0; i < LEVELS; i++) {
-                pthread_mutex_unlock(&shm_ptr->data->levels[i].LPR.lock);
-            }
-
-            printf("Threads cancelled\n"); fflush(stdout);
-            /* Begin alarm threads */
-            for (int i = 0; i < ENTRANCES; i++)
-            {
-                gate_addr = &shm_ptr->data->entrances[i].gate;
-                //pthread_mutex_unlock(&gate_addr->lock);
-                if(pthread_create(&entrboom_th[i], NULL, (void *)thf_boomAlarm, gate_addr) != 0){
-                    printf("Failed to create threads\n"); fflush(stdout);
-                }
-            }
-            
-            for (int i = 0; i < EXITS; i++)
-            {
-                gate_addr = &shm_ptr->data->exits[i].gate;
-                //pthread_mutex_unlock(&gate_addr->lock);
-                if(pthread_create(&exitboom_th[i], NULL, (void *)thf_boomAlarm, gate_addr) != 0){
-                    printf("Failed to create threads\n"); fflush(stdout);
-                }
-            }
-            printf("Made alarm threads\n"); fflush(stdout);
-
-            /* Wait for threads to finish */
-            for (int i = 0; i < ENTRANCES; i++)
-            {
-                pthread_join(entrboom_th[i], NULL);
-            }
-
-            for (int i = 0; i < EXITS; i++)
-            {
-                pthread_join(exitboom_th[i], NULL);
-            }
-            printf("All boomgates open, simulator idle\n"); fflush(stdout);
-            
-            /* do nothing */
-            while(true);
-            
-            break;
-        case 'e':
-            pthread_cancel(time_th);
-            pthread_cancel(creator_th);
-            pthread_cancel(inside_th);
-            pthread_cancel(temp_th);
-            for (int i = 0; i < ENTRANCES; i++)
-            {
-                pthread_cancel(entr_threads[i]);
-            }
-
-            for (int i = 0; i < EXITS; i++)
-            {
-                pthread_cancel(exit_threads[i]);
-            }
-
-            // free(&shm);
-            
-            break;
-        default:
-            break;  
-    }
-
-
-    /* Join all threads back to main */
-    for (int i = 0; i < ENTRANCES; i++)
+    char local_input = 'n';
+    while (local_input != 'e')
     {
-        pthread_join(entr_threads[i], NULL);
+        local_input = check_user_input(temp_th);
+
+        switch (local_input) {
+            case 'a':
+                printf("*** ALARM ACTIVE ***\n");
+                fflush(stdout); 
+                /* Cancel existing threads */
+                pthread_cancel(time_th);
+                pthread_cancel(creator_th);
+                pthread_cancel(inside_th);
+                pthread_cancel(temp_th);
+
+                for (int i = 0; i < ENTRANCES; i++)
+                {
+                    pthread_cancel(entr_threads[i]);
+                }
+
+                for (int i = 0; i < EXITS; i++)
+                {
+                    pthread_cancel(exit_threads[i]);
+                }
+
+                /* Unlock all mutexes */
+                pthread_cancel(time_th);
+                for (int i = 0; i < ENTRANCES; i++) {
+                    pthread_mutex_unlock(&shm_ptr->data->entrances[i].gate.lock);
+                    pthread_mutex_unlock(&shm_ptr->data->entrances[i].screen.lock);
+                    pthread_mutex_unlock(&shm_ptr->data->entrances[i].LPR.lock);
+                }
+                for (int i = 0; i < EXITS; i++) {
+                    pthread_mutex_unlock(&shm_ptr->data->exits[i].gate.lock);
+                    pthread_mutex_unlock(&shm_ptr->data->exits[i].LPR.lock);
+                }
+                for (int i = 0; i < LEVELS; i++) {
+                    pthread_mutex_unlock(&shm_ptr->data->levels[i].LPR.lock);
+                }
+
+                printf("Threads cancelled\n"); fflush(stdout);
+                /* Begin alarm threads */
+                for (int i = 0; i < ENTRANCES; i++)
+                {
+                    gate_addr = &shm_ptr->data->entrances[i].gate;
+                    //pthread_mutex_unlock(&gate_addr->lock);
+                    if(pthread_create(&entrboom_th[i], NULL, (void *)thf_boomAlarm, gate_addr) != 0){
+                        printf("Failed to create threads\n"); fflush(stdout);
+                    }
+                }
+                
+                for (int i = 0; i < EXITS; i++)
+                {
+                    gate_addr = &shm_ptr->data->exits[i].gate;
+                    //pthread_mutex_unlock(&gate_addr->lock);
+                    if(pthread_create(&exitboom_th[i], NULL, (void *)thf_boomAlarm, gate_addr) != 0){
+                        printf("Failed to create threads\n"); fflush(stdout);
+                    }
+                }
+                printf("Made alarm threads\n"); fflush(stdout);
+
+                /* Wait for threads to finish */
+                for (int i = 0; i < ENTRANCES; i++)
+                {
+                    pthread_join(entrboom_th[i], NULL);
+                }
+
+                for (int i = 0; i < EXITS; i++)
+                {
+                    pthread_join(exitboom_th[i], NULL);
+                }
+                printf("All boomgates open, simulator idle\n"); fflush(stdout);
+                
+                break;
+            case 'e':
+                shm_ptr->data->levels[0].alarm = 'e';
+                pthread_cancel(time_th);
+                pthread_cancel(creator_th);
+                pthread_cancel(inside_th);
+                pthread_cancel(temp_th);
+                for (int i = 0; i < ENTRANCES; i++)
+                {
+                    pthread_cancel(entr_threads[i]);
+                }
+
+                for (int i = 0; i < EXITS; i++)
+                {
+                    pthread_cancel(exit_threads[i]);
+                }
+                
+                break;
+            default:
+                break;  
+    }
     }
 
-        for (int i = 0; i < EXITS; i++)
+    pthread_mutex_destroy(&eq_lock);
+    pthread_mutex_destroy(&exq_lock);
+    pthread_mutex_destroy(&rand_lock);
+    pthread_mutex_destroy(&inlist_lock);
+    pthread_mutex_destroy(&sim_cars_lock);
+
+    qnode_t *temphead = eqlist_head;
+    node_t *nodetemp = eqlist_head->queue;
+    qnode_t *qnodetemp = eqlist_head->qnext;
+
+    for (; temphead != NULL; temphead = qnodetemp)
     {
-        pthread_join(exit_threads[i], NULL);
+        for (;temphead->queue != NULL; temphead->queue = nodetemp)
+        {
+            nodetemp = temphead->queue->next;
+            free(temphead->queue);
+        }
+        qnodetemp = temphead->qnext;
+        free(temphead);
     }
-    
-    pthread_join(time_th, NULL);
-    pthread_join(creator_th, NULL);
-    pthread_join(inside_th, NULL);
 
-    fflush(stdout);
-
-
-
+    free(eqlist_head);
+    free(exqlist_head);
+    free(inside_list);
+    free(sim_cars_head);
+    destroy_shared_object(&shm);
 
     return EXIT_SUCCESS;
-    
 }
 
 

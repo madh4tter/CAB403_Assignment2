@@ -25,9 +25,7 @@ bool get_shared_object( shm_t* shm, const char* share_name ) {
 void destroy_shared_object( shm_t* shm ) {
     // Remove the shared memory object.
     munmap(shm, sizeof(shm_t));
-
-    shm_unlink(shm->name);
-
+    shm_unlink("PARKING");
     shm->fd = -1;
     shm->data = NULL;
 }

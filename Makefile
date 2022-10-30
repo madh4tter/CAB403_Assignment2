@@ -1,13 +1,13 @@
 all: simulator manager firealarm
 
 simulator : simulator.c
-	gcc simulator.c -o simulator -Wall -Wextra -lrt -lpthread
+	gcc simulator.c -o simulator -Wall -Wextra -lrt -lpthread -g
 
 manager : manager.c
-	gcc manager.c -o manager -Wall -Wextra -lrt -lpthread
+	gcc manager.c -o manager -Wall -Wextra -lrt -lpthread -g
 
 firealarm : firealarm.c
-	gcc firealarm.c -o firealarm -Wall -Wextra -lrt -lpthread
+	gcc firealarm.c -o firealarm -Wall -Wextra -lrt -lpthread -g
 
 clean: 
 	rm -f simulator

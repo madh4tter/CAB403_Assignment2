@@ -138,6 +138,20 @@ void tempmonitor(int level)
 	}
 }
 
+void thf_check(void *level_addr)
+{
+	level_t *level = (level_t *)(level_addr);
+
+	while(alarm_active != 'e')
+	{
+		pthread_mutex_lock(&alarm_mutex);
+		alarm_active = level->alarm;
+		pthread_mutex_unlock(&alarm_mutex);
+	}
+
+	pthread_cond_broadcast(&alarm_condvar);
+}
+
 /************************** EMERGENCY METHODS *****************************************/
 void openboomgate(void *gate_addr) 
 {
@@ -145,8 +159,7 @@ void openboomgate(void *gate_addr)
 	gate_t *boom_gate = (gate_t *)gate_addr;
 	pthread_mutex_lock(&boom_gate->lock);
 	while(boom_gate->status != 'O') { 
-		/*  !!NASA Power of 10: #2 (loops have fixed bounds)!! 
-		Thread now waits till the gate is open, then leaves it. Once it's done, it unlocks.  */
+		/* Thread now waits till the gate is open, then leaves it. Once it's done, it unlocks.  */
 		if (boom_gate->status == 'C') {
 			boom_gate->status = 'R';
 			pthread_mutex_unlock(&boom_gate->lock);
@@ -243,9 +256,16 @@ void emergency_mode(void)
 	}
 	for (int i = 0; i < ENTRANCES; i++) {
 		pthread_join(entrboom_th[i], NULL);
-		pthread_join(screens_th[i], NULL);
 	}
 
+	pthread_mutex_lock(&alarm_mutex);
+	pthread_cond_wait(&alarm_condvar, &alarm_mutex);
+	pthread_mutex_unlock(&alarm_mutex);
+
+	for (int i = 0; i < ENTRANCES; i++)
+	{
+		pthread_cancel(screens_th[i]);
+	}
 }
 
 /**************************** MAIN ****************************************************/
@@ -256,22 +276,51 @@ int main(void)
 		printf("Failed to get memory");
 	}
 	
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+
 	/* Create threads for temperature monitoring */
 	pthread_t fthreads[LEVELS];
 	for (int i = 0; i < LEVELS; i++) {
 		pthread_create(&fthreads[i], NULL, (void *) tempmonitor, (int *)(uintptr_t)i);
 	}
 
+	pthread_t check_th;
+	level_t *level_addr;
+	shm_t *shm_ptr = &shm;
+	level_addr = &shm_ptr->data->levels[0];
+	pthread_create(&check_th, NULL, (void *)thf_check, level_addr);
+
 	/* Wait until alarm is signalled */
 	pthread_mutex_lock(&alarm_mutex);
 	pthread_cond_wait(&alarm_condvar, &alarm_mutex);
-	pthread_mutex_unlock(&alarm_mutex);
 
-	/* Destroy current threads and begin emergency protocol */
-	emergency_mode();
+	if (alarm_active == 'e')
+	{
+		pthread_mutex_unlock(&alarm_mutex);
+		for (int i = 0; i < LEVELS; i++)
+		{
+			pthread_cancel(fthreads[i]);
+		}
+		pthread_cancel(check_th);
 
-	/* End program once emergency is over and clean up*/
-	destroy_shared_object(&shm);
+		printf("Ended threads\n");fflush(stdout);
 
+		destroy_shared_object(&shm);
+
+		return 0;
+	}else{
+		pthread_mutex_unlock(&alarm_mutex);
+
+		/* Destroy current threads and begin emergency protocol */
+		emergency_mode();
+
+		pthread_mutex_unlock(&alarm_mutex);
+		pthread_cancel(check_th);
+		printf("Ended threads\n");fflush(stdout);
+		destroy_shared_object(&shm);
+	}
+
+	/* End program once emergency is over */
 	return 0;
 }

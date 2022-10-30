@@ -9,7 +9,7 @@
 
 
  
-// Global Variables
+/* Global Variables */
 int m_counter = 0;
 
 typedef struct mstimer{
@@ -20,21 +20,22 @@ typedef struct mstimer{
 
 mstimer_t runtime;
 
-// Mutex's needed for lpr_entrance funcation
+/* Mutex's needed for lpr_entrance funcation */
 pthread_mutex_t car_park_lock; /* New Car Array Lock*/
 
-// Create link list
+/* Create link list */
 node_t *car_list = NULL;
 
-// Create Hash tabe
+/* Create Hash tabe */
 htab_t htab;
 
 shm_t shm;
 FILE *fp;
 
 int level_tracker[LEVELS] = {0};
+bool m_running = true;
 
-//* Thread function to keep track of time in ms*/
+/* Thread function to keep track of time in ms*/
 void *thf_time(void *ptr){
     struct timespec start, end;
     /* determine start time of thread */
@@ -64,14 +65,14 @@ void *thf_time(void *ptr){
 
 
 
-// Send error message to shell window
+/* Send error message to shell window */
 void print_err(char *message)
 {
     printf("%s", message);
     fflush(stdout);
 }
 
-// Get Allowed Cars //////////////////////////////////////////////////////////////
+/*********** Get allowed cars ***************/
 void htab_create(void)
 {
     size_t buckets = 100;
@@ -82,17 +83,19 @@ void htab_create(void)
     }
 }
 
-// Enternce of Car Park //////////////////////////////////////////////////////////
+/************* Car park enterance ***************/
 char car_count() 
 {
     int next_level = m_counter % LEVELS;
-    level_tracker[next_level]++;
-    //next_level++;
+    if (level_tracker[next_level] < LEVEL_CAPACITY)
+    {
+        level_tracker[next_level]++;
+    }
     char level = next_level + '0'; 
     return level;
 }
 
-// Boomgates //////////////////////////////////////////////////////////////////////
+/* Boomgates */
 void m_sim_gates(gate_t *gate) 
 {
     usleep(1000);
@@ -126,7 +129,7 @@ void entrance_lpr(entrance_t *ent)
     node_t* find = NULL;
 
 
-    while(true)
+    while(m_running == true)
     { 
         pthread_mutex_lock(&ent->LPR.lock);
         
@@ -193,7 +196,7 @@ void entrance_lpr(entrance_t *ent)
 
 
 
-// Level Adjustments ////////////////////////////////////////////////////////////
+/******************Level Adjustments **************/
 
 typedef struct level_tracker
 {
@@ -206,7 +209,7 @@ void level_lpr(level_tracker_t *lvl)
     char holder;
     node_t* find;
 
-    while (1)
+    while (m_running == true)
     {
         pthread_mutex_lock(&lvl->level->LPR.lock);
         pthread_cond_wait(&lvl->level->LPR.cond, &lvl->level->LPR.lock);
@@ -222,8 +225,7 @@ void level_lpr(level_tracker_t *lvl)
     }
 }
 
-// Lets talk money $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-
+/* Charge cars */
 void money(vehicle_t* car)
 {
     fp = fopen(REVENUE_FILE, "a"); /* Open file */
@@ -239,23 +241,29 @@ void money(vehicle_t* car)
 }
 
 
-// Exit of Car Park /////////////////////////////////////////////////////////////////////
+/****************** Exit of Car Park ***********************/
 
 void exit_lpr(exit_t *ext)
 {
-    while(true)
+    int level_holder;
+    while(m_running == true)
     {
         pthread_mutex_lock(&ext->LPR.lock);
 
         pthread_cond_wait(&ext->LPR.cond, &ext->LPR.lock);
         pthread_mutex_lock(&car_park_lock);
         m_counter--;
+        node_t *find = node_find_lp(car_list, ext->LPR.plate); /* Find car that is leaving */
+        level_holder = (int)*find->vehicle->level - 48;
+        if (level_tracker[level_holder] != 0)
+        {
+            level_tracker[level_holder]--;
+        }
         pthread_mutex_unlock(&car_park_lock);
 
         usleep(2000); /* ensure that sim is waiting for signal */
         m_sim_gates(&ext->gate);
 
-        node_t *find = node_find_lp(car_list, ext->LPR.plate); /* Find car that is leaving */
         money(find->vehicle); /* Charge the amount and save it*/
         car_list = node_delete(car_list, ext->LPR.plate); /* Remove from linked list*/
         
@@ -361,7 +369,7 @@ void get_level(){
 		printf("\t\t\t\t\t\t\t\t  ");
 		printf("Temperature Sensor %d Status: %d\n", i+1, temperature);
 		printf("\t\t\t\t\t\t\t\t  ");
-		printf("Level %d Occupancy: %d of %d\n", i+1, occup_base, LEVEL_CAPACITY);
+		printf("Level %d Occupancy: %d of %d\n", i+1, level_tracker[i], LEVEL_CAPACITY);
 	}
 
 }
@@ -426,7 +434,7 @@ void *thf_display(void *ptr){
 
 		}
 
-		while(true){
+		while(m_running == true){
 			fflush(stdout);
 
 	    	close(pipefd[1]);
@@ -445,10 +453,8 @@ void *thf_display(void *ptr){
                 
                 printf("\n\n\n\n\n");fflush(stdout);
 				print_revenue();
-                printf("Count: %d\n", m_counter);
 
 				usleep(50*1000);
-                //sleep(1.5);
 				fflush(stdout);
 			}
 			else {
@@ -467,30 +473,30 @@ int main(void)
     fclose(fp);
     int error;
 
-    // Get Shared Memory
+    /* Get Shared Memory */
     if (get_shared_object(&shm, "PARKING") != true)
     {
         print_err("error getting shared memory\n");
     }
     shm_t *shm_ptr = &shm;
 
-    // Get Licence plates
+    /* Get Licence plates */
     htab_create();
     get_plates(&htab, PLATES_FILE);
 
 
-    // Start mutex's
+    /* Start mutex's */
     if (pthread_mutex_init(&car_park_lock, NULL) != 0)
     {
         print_err("error creating mutex for car park\n");
         return 0;
     }
     
-    // Start threads
+    /* Start threads */
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
-    // Threads
+    /* Threads */
     pthread_t enter_thread[ENTRANCES];
     pthread_t exit_thread[EXITS];
     pthread_t level_thread[LEVELS];
@@ -502,7 +508,7 @@ int main(void)
     pthread_create(&time_th, NULL, thf_time, NULL);
     for (int i = 0; i < ENTRANCES; i++)
     {
-        // The entrances for the cars
+        /* The entrances for the cars */
         if (pthread_create(&enter_thread[i], NULL, (void*)entrance_lpr, &shm.data->entrances[i]) != 0)
         {
             print_err("error creating threads\n");
@@ -510,7 +516,7 @@ int main(void)
 
     }
 
-    // Level Threads
+    /* Level Threads */
     for (int i = 0; i < LEVELS; i++)
     {
         level_tracker_t new_level;
@@ -524,10 +530,10 @@ int main(void)
         }
     }
 
-    // Exit threads
+    /* Exit threads */
     for (int i = 0; i < EXITS; i++)
     {
-        // The entrances for the cars
+        /* The entrances for the cars */
         error = pthread_create(&exit_thread[i], NULL, (void*)exit_lpr, &shm.data->exits[i]);
         if (error != 0)
         {
@@ -536,17 +542,12 @@ int main(void)
 
     }
 
-
-
-
-
-
     char local_alarm = '0';
     /* Wait for alarm to activate */
     while(local_alarm != '1' || local_alarm != 'e'){
         for(int i=0; i<LEVELS; i++){
-            if(shm_ptr->data->levels[i].alarm == '1'){
-                local_alarm = '1';
+            if(shm_ptr->data->levels[i].alarm == '1' || shm_ptr->data->levels[i].alarm == 'e'){
+                local_alarm = shm_ptr->data->levels[i].alarm;
             }
         usleep(1000);
         }
@@ -554,7 +555,6 @@ int main(void)
 
     /* End all existing threads except display*/
     pthread_cancel(time_th);
-    pthread_cancel(display_th);
     for (int i = 0; i < ENTRANCES; i++) {
         pthread_cancel(enter_thread[i]);
     }
@@ -563,6 +563,12 @@ int main(void)
     }
     for (int i = 0; i < LEVELS; i++) {
         pthread_cancel(level_thread[i]);
+    }
+    if (local_alarm == 'e')
+    {
+        pthread_cancel(display_th);
+        system("clear");
+        printf("Manager Finsihed");
     }
 
     /* Unlock all mutexes */
@@ -580,17 +586,15 @@ int main(void)
         pthread_mutex_unlock(&shm_ptr->data->levels[i].LPR.lock);
     }
 
-    pthread_create(&display_th, NULL, thf_display, NULL);
+    // pthread_create(&display_th, NULL, thf_display, NULL);
+    
+    // pthread_join(display_th, NULL);
 
-    pthread_join(display_th, NULL);
-
-    printf("got to here okay\n"); fflush(stdout);
-    // // Clean up everything
-    // pthread_mutex_destroy(&car_park_lock);
-    // free(car_list);
-    // destroy_shared_object(&shm);
-    // htab_destroy(&htab);
-    // printf("Made it to the end");
+    // Clean up everything
+    pthread_mutex_destroy(&car_park_lock);
+    delete_list(car_list, 0);
+    destroy_shared_object(&shm);
+    htab_destroy(&htab);
     return 0;
 }
 
