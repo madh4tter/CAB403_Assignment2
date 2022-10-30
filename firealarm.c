@@ -1,54 +1,34 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
-#include <pthread.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <fcntl.h>
-
-
+/*******************************************************************
+ * \file   firealarm.c
+ * \brief  Safety crtitcal program that assesses the temperatures of the car park 
+ * levels to determine if there is a fire and, if so, override the manager
+ * 
+ * \author CAB403 Group 69
+ * \date   October 2022
+ *********************************************************************/
+/* Include necessary libraries and definitions */
 #include "firealarm.h"
 #include "PARKING.h"
 #include "shm_methods.h"
 
+/* Define macros */
+#define MEDIAN_WINDOW 5
+#define TEMPCHANGE_WINDOW 30
 
-
+/* Define global variables */
 shm_t shm;
-
-
-
 char alarm_active = '0';
 pthread_mutex_t alarm_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t alarm_condvar = PTHREAD_COND_INITIALIZER;
 
-
-#define MEDIAN_WINDOW 5
-#define TEMPCHANGE_WINDOW 30
-
-struct boomgate {
-	pthread_mutex_t boom_mutex;
-	pthread_cond_t boom_cond;
-	char boom_char;
-};
-
-struct parkingsign {
-	pthread_mutex_t parking_mutex;
-	pthread_cond_t parking_cond;
-	char parking_display;
-};
-
-struct tempnode {
-	int temperature;
-	struct tempnode *next;
-};
-
+/*************** TEMPERATURE MONITORING METHODS *****************/
 struct tempnode *deletenodes(struct tempnode *templist, int after)
 {
-	if (templist->next) {
+	/* Delete nodes after index until end of list */
+	if (templist->next != NULL) {
 		templist->next = deletenodes(templist->next, after - 1);
 	}
+	/* Destroy linked list if after is 0 */
 	if (after <= 0) {
 		free(templist);
 		return NULL;
@@ -63,6 +43,7 @@ int compare(const void *first, const void *second)
 
 void tempmonitor(int level)
 {
+	/* Declare loop variables */
 	shm_t *shm_ptr = &shm;
 	struct tempnode *templist = NULL; 
 	struct tempnode *newtemp = NULL;
@@ -74,12 +55,8 @@ void tempmonitor(int level)
 	int hightemps = 0;
 	char local_check = '0';
 
-
+	/* While alarm is not active or the program has not ended*/
 	while(local_check == '0'){ 
-	/*  NASA Power of 10: #2 (loops have fixed bounds)
-		Fixed by changing it to only monitoring while the alarm is not active. Once the alarm is active, the system goes into 'alarm mode'. 
-		This can only be changed by resetting the whole system.  */
-		
 		/* Temperature address gathered from shared memory pointer */
 		temp = shm_ptr->data->levels[level].temp;
 		
@@ -149,8 +126,10 @@ void tempmonitor(int level)
 					pthread_cond_broadcast(&alarm_condvar);
 				}
 			}
-		
+		/* Sleep for 2ms */
 		usleep(2000);
+
+		/* Update alarm */
 		pthread_mutex_lock(&alarm_mutex);
 		alarm_active = shm_ptr->data->levels[level].alarm;
 		local_check = alarm_active;
@@ -159,12 +138,11 @@ void tempmonitor(int level)
 	}
 }
 
-void openboomgate(void *arg) 
+/************************** EMERGENCY METHODS *****************************************/
+void openboomgate(void *gate_addr) 
 {
-	/* Wait to ensure all threads receive the message */
-	/* usleep(1000); 
 	/* Correction of variable type */
-	gate_t *boom_gate = (gate_t *)arg;
+	gate_t *boom_gate = (gate_t *)gate_addr;
 	pthread_mutex_lock(&boom_gate->lock);
 	while(boom_gate->status != 'O') { 
 		/*  !!NASA Power of 10: #2 (loops have fixed bounds)!! 
@@ -177,35 +155,38 @@ void openboomgate(void *arg)
 		pthread_mutex_lock(&boom_gate->lock);
 		pthread_cond_wait(&boom_gate->cond, &boom_gate->lock);
 	} 
-	/* Keep it locked so that no one else can edit the value as a safety feature */
+	/* Unlock mutex */
 	pthread_mutex_unlock(&boom_gate->lock); 
 }
 
-void evac_msg(void *arg){
+void evac_msg(void *screen_addr)
+{
 	/* Correction of variable type */
-	screen_t *screen = (screen_t *)arg;
+	screen_t *screen = (screen_t *)screen_addr;
+
+	/*Initialise loop variables */
 	shm_t *shm_ptr = &shm;
 	char local_check = '1';
-
 	printf("Showing EVACUATE on screens\n"); fflush(stdout);
 
 	do { 
-		/*  !!NASA Power of 10: #2 (loops have fixed bounds)!! 
-			FIXED BY HAVING EXIT CHECK  */
 		pthread_mutex_unlock(&alarm_mutex);
 		const char *evacmessage = "EVACUATE ";
+		/* Show each letter of message on screen */
 		for (const char *p = evacmessage; *p != '\0'; p++) {
 			pthread_mutex_lock(&screen->lock);
 			screen->display = *p;
 			pthread_mutex_unlock(&screen->lock);
 			pthread_cond_broadcast(&screen->cond);
-			usleep(20000);
+			/* Sleep 2ms */
+			usleep(2000);
 		}
 		pthread_mutex_lock(&alarm_mutex);
+		/* Check if simulation has ended */
 		for(int i = 0; i < LEVELS; i++){
 			char alarm_active_check = shm_ptr->data->levels[i].alarm;
-			if(alarm_active_check == '0'){
-				alarm_active = '0';
+			if(alarm_active_check == 'e'){
+				alarm_active = 'e';
 				local_check = alarm_active;				
 			}
 		}
@@ -267,31 +248,29 @@ void emergency_mode(void)
 
 }
 
-
+/**************************** MAIN ****************************************************/
 int main(void) 
-/*  Must have input declarations 
-	added 'void' input.  */
 {
+	/* Get shared memory address */
 	if (get_shared_object(&shm, SHARE_NAME) == 0){
 		printf("Failed to get memory");
 	}
 	
+	/* Create threads for temperature monitoring */
 	pthread_t fthreads[LEVELS];
-	
 	for (int i = 0; i < LEVELS; i++) {
 		pthread_create(&fthreads[i], NULL, (void *) tempmonitor, (int *)(uintptr_t)i);
 	}
 
+	/* Wait until alarm is signalled */
 	pthread_mutex_lock(&alarm_mutex);
 	pthread_cond_wait(&alarm_condvar, &alarm_mutex);
 	pthread_mutex_unlock(&alarm_mutex);
 
+	/* Destroy current threads and begin emergency protocol */
 	emergency_mode();
 
-	for (int i = 0; i < LEVELS; i++) {
-		pthread_join(fthreads[i], NULL);
-	}
-
+	/* End program once emergency is over and clean up*/
 	destroy_shared_object(&shm);
 
 	return 0;
