@@ -141,7 +141,7 @@ void tempmonitor(int level)
 void thf_check(void *level_addr)
 {
 	level_t *level = (level_t *)(level_addr);
-
+	/* Wait until simulation told to end */
 	while(alarm_active != 'e')
 	{
 		pthread_mutex_lock(&alarm_mutex);
@@ -276,6 +276,7 @@ int main(void)
 		printf("Failed to get memory");
 	}
 	
+	/* Set cancel state and type for threads */
 	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
@@ -285,16 +286,18 @@ int main(void)
 		pthread_create(&fthreads[i], NULL, (void *) tempmonitor, (int *)(uintptr_t)i);
 	}
 
+	/* Intialise thread variables */
 	pthread_t check_th;
 	level_t *level_addr;
 	shm_t *shm_ptr = &shm;
 	level_addr = &shm_ptr->data->levels[0];
 	pthread_create(&check_th, NULL, (void *)thf_check, level_addr);
 
-	/* Wait until alarm is signalled */
+	/* Wait until alarm or end is signalled */
 	pthread_mutex_lock(&alarm_mutex);
 	pthread_cond_wait(&alarm_condvar, &alarm_mutex);
 
+	/* Cancel threads and release memory */
 	if (alarm_active == 'e')
 	{
 		pthread_mutex_unlock(&alarm_mutex);

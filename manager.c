@@ -1,78 +1,43 @@
+/*******************************************************************
+ * \file   manager.c
+ * \brief  Manager of car park system
+ * 
+ * \author CAB403 Group 69
+ * \date   October 2022
+ *********************************************************************/
+/* Include necessary libraries and definitions */
 #include "PARKING.h"
 #include "linked_list.h"
 #include "hash_table_read.h"
 #include "shm_methods.h"
-#include "status_display.h"
+#include "manager.h"
 
+/* Define macros */
 #define NONE '\0' /* Null value in the LPR*/
 #define RATE 0.05
+#define BUFFER 20
 
-
- 
-/* Global Variables */
+ /* Define global variables */
 int m_counter = 0;
-
-typedef struct mstimer{
-    uint64_t elapsed; 
-    pthread_mutex_t lock;
-    pthread_cond_t cond;
-} mstimer_t;
-
 mstimer_t runtime;
-
-/* Mutex's needed for lpr_entrance funcation */
-pthread_mutex_t car_park_lock; /* New Car Array Lock*/
-
-/* Create link list */
-node_t *car_list = NULL;
-
-/* Create Hash tabe */
-htab_t htab;
-
 shm_t shm;
 FILE *fp;
-
 int level_tracker[LEVELS] = {0};
-bool m_running = true;
-
-/* Thread function to keep track of time in ms*/
-void *thf_time(void *ptr){
-    struct timespec start, end;
-    /* determine start time of thread */
-    clock_gettime(CLOCK_MONOTONIC, &start);
-    
-    while(true){
-        /* sleep for one millisecond */
-        usleep(1000);
-
-        /* Read time on arbitrary clock */
-        clock_gettime(CLOCK_MONOTONIC, &end);
-
-        /* Acquire mutex */
-        pthread_mutex_lock(&runtime.lock);
-
-        /* Compare time to start time of thread */
-        runtime.elapsed = (end.tv_sec - start.tv_sec) * 1000 
-        + (end.tv_nsec - start.tv_nsec) / 1000000;
-
-        /* Signal that change has occured and unlock the mutex */
-        pthread_mutex_unlock(&runtime.lock);
-        pthread_cond_signal(&runtime.cond);
-    }
-
-    return ptr;
-}
+pthread_mutex_t car_park_lock;      /* New Car Array Lock*/
+node_t *car_list = NULL;            /* Create link list */
+htab_t htab;                        /* Create Hash tabe */
 
 
 
-/* Send error message to shell window */
+/*************************** MISC FUNCTIONS ********************/
+
 void print_err(char *message)
 {
+    /* Send error message to shell window */
     printf("%s", message);
     fflush(stdout);
 }
 
-/*********** Get allowed cars ***************/
 void htab_create(void)
 {
     size_t buckets = 100;
@@ -83,23 +48,26 @@ void htab_create(void)
     }
 }
 
-/************* Car park enterance ***************/
-char car_count() 
+char car_count(void) 
 {
+    /* Assign levels equally */
     int next_level = m_counter % LEVELS;
     if (level_tracker[next_level] < LEVEL_CAPACITY)
     {
         level_tracker[next_level]++;
     }
+    /* Convert to character to display on screen */
     char level = next_level + '0'; 
     return level;
 }
 
-/* Boomgates */
 void m_sim_gates(gate_t *gate) 
 {
+    /* Wait to ensure sim is ready for signal */
     usleep(1000);
     pthread_mutex_lock(&gate->lock);
+
+    /* Open gate */
     if(gate->status == 'C'){
     gate->status = 'R';
     pthread_mutex_unlock(&gate->lock);
@@ -108,6 +76,8 @@ void m_sim_gates(gate_t *gate)
     while(gate->status != 'O'){
         pthread_cond_wait(&gate->cond, &gate->lock);
     }
+
+    /* Close Gate */
     usleep(20*1000);
     gate->status = 'L';
     pthread_mutex_unlock(&gate->lock);
@@ -121,38 +91,58 @@ void m_sim_gates(gate_t *gate)
    pthread_cond_broadcast(&gate->cond);
 }
 
+void money(vehicle_t* car)
+{
+    fp = fopen(REVENUE_FILE, "a"); /* Open file */
 
+    /* Determine how long the car has been in the park */
+    pthread_mutex_lock(&runtime.lock);
+    double total_time = runtime.elapsed - car->arrival;
+    pthread_mutex_unlock(&runtime.lock);
+    double total_amount = total_time * RATE;
+
+    fprintf(fp, "%s $%0.2f\n", car->licence_plate, total_amount); /* Write and close file*/
+
+    fclose(fp);
+}
+
+/********************* THREAD FUNCTIONS  *****************************/
 void entrance_lpr(entrance_t *ent)
 {
+    /* Initialise loop variable */
     char holder[6];
     char assign_level;
     node_t* find = NULL;
 
-
-    while(m_running == true)
+    /* Loop until cancelled */
+    while(true)
     { 
+        /* Wait until a car appears */
         pthread_mutex_lock(&ent->LPR.lock);
-        
-        pthread_cond_wait(&ent->LPR.cond, &ent->LPR.lock); /* Wait until a car appears */
+        pthread_cond_wait(&ent->LPR.cond, &ent->LPR.lock); 
 
+        /* Identify car plate */
         strcpy(holder, ent->LPR.plate);
         pthread_mutex_unlock(&ent->LPR.lock);
 
+        /* Identify if car is allowed */
         find = node_find_lp(car_list, holder);
-
         if(search_plate(&htab, holder) == true && find == NULL) /* Checks if the car is allowed in */
         {
+            /* Identify if there is space in car park */
             pthread_mutex_lock(&car_park_lock);
             if (m_counter < (LEVELS * LEVEL_CAPACITY))
             {
                 m_counter++;
+
+                /* Determine level to assign to car */
                 assign_level = car_count();
-
                 pthread_mutex_unlock(&car_park_lock);
-
+                
+                /* Sceen show level value */
                 usleep(2000);
                 pthread_mutex_lock(&ent->screen.lock);
-                ent->screen.display = assign_level + 1; /* Sceen show level value */
+                ent->screen.display = assign_level + 1; 
                 pthread_mutex_unlock(&ent->screen.lock);
                 pthread_cond_broadcast(&ent->screen.cond);
 
@@ -164,11 +154,12 @@ void entrance_lpr(entrance_t *ent)
                 new_vehicle->arrival = runtime.elapsed;
                 pthread_mutex_unlock(&runtime.lock);
                 
-
+                /* Add car to linked list*/
                 node_t *newhead = node_add(car_list, new_vehicle);
-                car_list = newhead; /* Add car to linked list*/
+                car_list = newhead; 
 
-                usleep(2000); /* ensure that sim is waiting for signal */
+                /* ensure that sim is waiting for signal */
+                usleep(3000); 
                 m_sim_gates(&ent->gate);
 
 
@@ -194,27 +185,19 @@ void entrance_lpr(entrance_t *ent)
     }  
 }
 
-
-
-/******************Level Adjustments **************/
-
-typedef struct level_tracker
-{
-    level_t *level;
-    int floor;
-} level_tracker_t;
-
 void level_lpr(level_tracker_t *lvl)
 {
+    /* Intialise loop variables */
     char holder;
     node_t* find;
 
-    while (m_running == true)
+    while (true)
     {
         pthread_mutex_lock(&lvl->level->LPR.lock);
         pthread_cond_wait(&lvl->level->LPR.cond, &lvl->level->LPR.lock);
 
         find = node_find_lp(car_list, lvl->level->LPR.plate);
+        /* Add car to appropriate floor list*/
         if (find != NULL)
         {
             holder = lvl->floor + '0';
@@ -225,33 +208,17 @@ void level_lpr(level_tracker_t *lvl)
     }
 }
 
-/* Charge cars */
-void money(vehicle_t* car)
-{
-    fp = fopen(REVENUE_FILE, "a"); /* Open file */
-
-    pthread_mutex_lock(&runtime.lock);
-    double total_time = runtime.elapsed - car->arrival;
-    pthread_mutex_unlock(&runtime.lock);
-    double total_amount = total_time * RATE;
-
-    fprintf(fp, "%s $%0.2f\n", car->licence_plate, total_amount); /* Write and close file*/
-
-    fclose(fp);
-}
-
-
-/****************** Exit of Car Park ***********************/
-
 void exit_lpr(exit_t *ext)
 {
     int level_holder;
-    while(m_running == true)
+    while(true)
     {
+        /* Wait for car to signal the LPR */
         pthread_mutex_lock(&ext->LPR.lock);
-
         pthread_cond_wait(&ext->LPR.cond, &ext->LPR.lock);
         pthread_mutex_lock(&car_park_lock);
+
+        /* Decrease total cars in lot */
         m_counter--;
         node_t *find = node_find_lp(car_list, ext->LPR.plate); /* Find car that is leaving */
         level_holder = (int)*find->vehicle->level - 48;
@@ -271,8 +238,8 @@ void exit_lpr(exit_t *ext)
     }
 }
 
-/****************** DISPLAY FUNCTIONS ********************/
-void get_entry(){
+/*************************** DISPLAY FUNCTIONS ********************/
+void get_entry(void){
 	char* plate_num;
 	char bg_status;
 	char sign_display;
@@ -306,7 +273,7 @@ void get_entry(){
 	}
 }
 
-void get_exit(){
+void get_exit(void){
 	char* plate_num;
 	char bg_status;
     shm_t *shm_ptr = &shm;
@@ -335,7 +302,7 @@ void get_exit(){
 
 }
 
-void get_level(){
+void get_level(void){
 	char* plate_num;
 	int16_t temperature;
     shm_t *shm_ptr = &shm;
@@ -380,7 +347,7 @@ double convertToNum(char a[]){
 	return val;
 }
 
-void print_revenue(){
+void print_revenue(void){
 	/* read file */
 	FILE *bill_file;
 	bill_file = fopen(REVENUE_FILE, "r");
@@ -418,9 +385,7 @@ bool check_for_fail(char* check){
 	return false;
 }
 
-void *thf_display(void *ptr){
-		shm_t shm;
-
+void thf_display(void){
 		int stdout_bk; /* is fd for stdout backup */
 		int pipefd[2];
 		pipe(pipefd); /* create pipe */
@@ -434,7 +399,7 @@ void *thf_display(void *ptr){
 
 		}
 
-		while(m_running == true){
+		while(true){
 			fflush(stdout);
 
 	    	close(pipefd[1]);
@@ -447,9 +412,9 @@ void *thf_display(void *ptr){
 			/* if no fail print display otherwise break loop */
 			if(check_for_fail(buf) != true){
 				system("clear");
-				get_entry(&shm);
-				get_exit(&shm);
-				get_level(&shm);
+				get_entry();
+				get_exit();
+				get_level();
                 
                 printf("\n\n\n\n\n");fflush(stdout);
 				print_revenue();
@@ -461,11 +426,36 @@ void *thf_display(void *ptr){
 				break;
 			}
 		}
-	return ptr;
+}
+
+/* Thread function to keep track of time in ms*/
+void thf_time(void){
+    struct timespec start, end;
+    /* determine start time of thread */
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    
+    while(true){
+        /* sleep for one millisecond */
+        usleep(1000);
+
+        /* Read time on arbitrary clock */
+        clock_gettime(CLOCK_MONOTONIC, &end);
+
+        /* Acquire mutex */
+        pthread_mutex_lock(&runtime.lock);
+
+        /* Compare time to start time of thread */
+        runtime.elapsed = (end.tv_sec - start.tv_sec) * 1000 
+        + (end.tv_nsec - start.tv_nsec) / 1000000;
+
+        /* Signal that change has occured and unlock the mutex */
+        pthread_mutex_unlock(&runtime.lock);
+        pthread_cond_signal(&runtime.cond);
+    }
 }
 
 
-// Main function
+/******************************* MAIN  *****************************/
 int main(void)
 {
     /* Clear revenue file */
@@ -504,8 +494,8 @@ int main(void)
     pthread_t time_th;
 
     /* Create threads */
-    pthread_create(&display_th, NULL, thf_display, NULL);
-    pthread_create(&time_th, NULL, thf_time, NULL);
+    pthread_create(&display_th, NULL, (void *)thf_display, NULL);
+    pthread_create(&time_th, NULL, (void *)thf_time, NULL);
     for (int i = 0; i < ENTRANCES; i++)
     {
         /* The entrances for the cars */
@@ -586,9 +576,6 @@ int main(void)
         pthread_mutex_unlock(&shm_ptr->data->levels[i].LPR.lock);
     }
 
-    // pthread_create(&display_th, NULL, thf_display, NULL);
-    
-    // pthread_join(display_th, NULL);
 
     // Clean up everything
     pthread_mutex_destroy(&car_park_lock);
@@ -597,5 +584,3 @@ int main(void)
     htab_destroy(&htab);
     return 0;
 }
-
-// :)

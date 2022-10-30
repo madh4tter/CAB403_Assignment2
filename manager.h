@@ -1,75 +1,144 @@
 /*****************************************************************//**
  * \file   manager.h
- * \brief  API definition for the manager c file 
+ * \brief  API definition for the manager.c file 
  * 
- * \author Fraser Toon
- * \date   24/09/2022
+ * \author CAB403 Group 69
+ * \date   October 2022
  *********************************************************************/
-#pragma once
+#include "PARKING.h"
 
-#ifndef MANAGER_H
-#define MANAGER_H
-
-void *manager(void *ptr);
-
-#endif
-
+/* Struct defintions */
 /**
- * Monitor the status of the LPR sensors and keep track of where each car is in the car
- * park
-*/
-
-/**
- * Tell the boom gates when to open and when to close (the boom gates are a simple
- * piece of hardware that can only be told to open or close, so the job of automatically
- * closing the boom gates after they have been open for a little while is up to the
- * manager)
+ * @brief Struct to hold the running time of the simulation,
+ * protected by a mutex and conditional variable
  * 
-*/
+ */
+typedef struct mstimer{
+    uint64_t elapsed; 
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+} mstimer_t;
 
 /**
- * Control what is displayed on the information signs at each entrance
-*/
+ * @brief Struct to hold the address and ID of a level
+ * 
+ */
+typedef struct level_tracker
+{
+    level_t *level;
+    int floor;
+} level_tracker_t;
+
+
+/* Method definitions */
+/**
+ * @brief Print and flush a message to the window, using the word error will stop the
+ * display function
+ * 
+ * @param message String to print
+ */
+void print_err(char *message);
 
 /**
- * As the manager knows where each car is, it is the manager’s job to ensure that there
- * is room in the car park before allowing new vehicles in (number of cars < number of
- * levels * the number of cars per level). The manager also needs to keep track of how
- * full the individual levels are and direct new cars to a level that is not fully occupied
-*/
+ * @brief Create hashtable to store accepted cars
+ * 
+ */
+void htab_create(void);
 
 /**
- * Keep track of how long each car has been in the parking lot and produce a bill once
- * the car leaves.
-*/
+ * @brief Assign a level to a car, filling up levels equally
+ * 
+ * @return char The level to dsiplay on the screen
+ */
+char car_count(void);
 
 /**
- * Display the current status of the parking lot on a frequently-updating screen, showing
- * how full each level is, the current status of the boom gates, signs, temperature
- * sensors and alarms, as well as how much revenue the car park has brought in so far
-*/
+ * @brief Send signals to open and close the gates
+ * 
+ * @param gate Address to the gate
+ */
+void m_sim_gates(gate_t *gate);
 
+/**
+ * @brief Thread function to operate the entrance of the car park
+ * 
+ * @param ent Adress of the relevant entrance
+ */
+void entrance_lpr(entrance_t *ent);
 
-// Get shared memory and check it works (What infomation is being shared to manager?)
+/**
+ * @brief Thread function to detect a car entering and leaving a level
+ * 
+ * @param lvl Address of the level tracking struct for that level
+ */
+void level_lpr(level_tracker_t *lvl);
 
-// Create a vechicle type to store infomation about each vechile that comes in
+/**
+ * @brief Charge cars at the exit
+ * 
+ * @param car The car leaving the park
+ */
+void money(vehicle_t* car);
 
-// Maybe create level type that stores infomation about what vehicle is where (Hash table? 5x(Whatever))
+/**
+ * @brief Thread function to handle cars at the exit gates
+ * 
+ * @param ext 
+ */
+void exit_lpr(exit_t *ext);
 
-// Threads that need to be used (One for each enterence (5), exit (5), boomgate enternce and boomgate exit) and a status thread
+/**
+ * @brief Display the variables of each entrance in the window
+ * 
+ */
+void get_entry(void);
 
-// Manage enterence, what vehicle are coming in, where they go and operate boom gate
+/**
+ * @brief Display the variables of each exit in the window
+ * 
+ */
+void get_exit(void);
 
-// Manage exit, what vehicle are leaving, where they go and operate boom gate
+/**
+ * @brief Display the variables of each level in the window
+ * 
+ */
+void get_level(void);
 
-// Mange each level (What vehicle are going where and recording in vehicle type)
-//  Find level to put car, find car park in level to put car
+/**
+ * @brief Convert a string to a double
+ * 
+ * @param a A chacter array to convert
+ * @return double The converted string
+ */
+double convertToNum(char a[]);
 
-// Raise and lower boom gate to allow vehicle to go through (2 funcations, reads licence plate)
-//  How long will the boom gate stay up for
+/**
+ * @brief Get the total revenue from the file and display in window
+ * 
+ */
+void print_revenue(void);
 
-// Check whether an emergency is called (If so do what?)
-//  Use infomation from the shared data steam
+/**
+ * @brief 
+ * 
+ * @param check String to check for a fail or error
+ * @return true If check contains the words string or error
+ * @return false If check contains no "string" or "error"
+ */
+bool check_for_fail(char* check);
 
-// Calculate revenue (Maybe type that records what vehicle come in, what time they do and what time they leave)
+/**
+ * @brief Thread function to display variables in window
+ * 
+ * @param ptr Thread data (NULL)
+ * 
+ */
+void thf_display(void);
 
+/**
+ * @brief Thread function to keep time of function in ms
+ * 
+ * @param ptr Thead data NULL
+ */
+void thf_time(void);
